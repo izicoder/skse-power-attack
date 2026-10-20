@@ -48,7 +48,49 @@ There are no automated tests. Verifying a change means building, enabling the mo
 
 Building never deploys. `tools/Deploy.ps1` copies the DLL into a mod folder and is the only thing that does;
 it refuses to run while `SkyrimSE` is open. Do not turn on `MOD_OUTPUT_FOLDER` in the build: a post-build copy
-would silently replace a DLL the running game has loaded.
+would silently replace a DLL the running game has loaded. The default deploy target is
+`C:\Modding\MO2\mods\SKSE Power Attack` (the old `One Click Power Attack (SKSE)` folder is gone).
+
+## Release and the mod page
+
+- Two commands per release, never one: `.\tools\Build-Release.ps1 -Version x.y.z`, then
+  `.\tools\Publish-Release.ps1 -Version x.y.z -Nexus -GitHub` (`-DryRun` first to validate). Building never
+  publishes and publishing never builds.
+- The mod is **live** on Nexus as `196152` (`https://www.nexusmods.com/skyrimspecialedition/mods/196152`) and
+  on GitHub as `izicoder/skse-power-attack`. The API key lives outside the repo: `$env:NEXUS_API_KEY` or
+  `%USERPROFILE%\.pi\nexus-api-key.txt`; GitHub goes through `gh`.
+- Nexus has two id spaces: `196152` is the game-scoped id from the URL; the v3 ids (mod `7318624468536`,
+  mod-file `8200119`) are what the upload API takes and are re-resolved on every run. Never hardcode a v3 id.
+- The API can only add a **version** to an existing file entry — the first upload for a new mod is manual.
+- Guards kept on purpose: the DLL inside the archive must report `-Version`, a version the Nexus file already
+  has is refused without `-Force`, and an archive containing `SKSEPowerAttack.json` is refused.
+- Page state: category Combat; tags Gameplay, Quality of Life, AI-Generated Content; requirements SKSE64 and
+  Address Library, plus SKSE Menu Framework with an "optional" note; short description is the owner's
+  vibe-coded one-liner. Screenshots and the publish button are the owner's.
+
+## Decisions already made
+
+- **Tap, not hold.** The attack fires on release, and only if the press was shorter than `tapWindowMs`
+  (default 200 ms, range 20-1000). The modifier is judged at press, the gates at release. This mirrors
+  BlinkDash's tap semantics deliberately.
+- Default hotkey is mouse button 5 (`260`), not right mouse.
+- The jump/block fallback is 200 ms of re-posting tasks, never a thread.
+- No attribution to any other power-attack mod anywhere (README, page, comments); it was removed on request,
+  do not re-add it.
+- Key codes are SKSE InputMap numbers as-is. Do not invent an offset.
+- SE/AE only: addresses come from the Address Library, VR is not supported.
+
+## Gotchas that cost time here
+
+- `SPA_VERSION` is a CMake cache variable, so a plain `cmake --build` keeps the last stamped number. Use
+  `Build-Release.ps1` whenever the version matters.
+- This machine's PowerShell has no `Get-FileHash` - compare files with `fc /b`, or .NET `SHA256`.
+- Do not clean the repo root with `Get-ChildItem *.txt | Remove-Item`: it deletes `CMakeLists.txt`. Tooling
+  scratch files belong outside the repo (`.playwright-mcp/` is ignored for that reason).
+- A config file written by the pre-rename build (`OneClickPowerAttack.json`) is imported once and left in
+  place; `config: importing the settings left by the earlier build` in the log is correct, not a bug.
+- Reading a test run: `tap #N on '<key>' (held N ms) -> power attack`, `held N ms > 200 ms window, no power
+  attack (hold)`, `tap ignored (<reason>)`, `input: menu '<name>' opened, dropping the modifier state`.
 
 ## Conventions
 
