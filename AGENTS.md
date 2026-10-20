@@ -2,21 +2,25 @@
 
 ## What this is
 
-**SKSE Power Attack** — a minimal SKSE plugin (C++23, CommonLibSSE-NG, Address Library) that turns a click of
+**SKSE Power Attack** — a minimal SKSE plugin (C++23, CommonLibSSE-NG, Address Library) that turns a tap of
 one key into a vanilla right-hand power attack. One DLL: no plugin file, no Papyrus, no MCM. Optional settings
 tab through SKSE Menu Framework.
 
-A minimal plugin by design: one click, one power attack. Do not add extras (dual attack, attack-window
+A minimal plugin by design: one tap, one power attack. Do not add extras (dual attack, attack-window
 notify/queue, long-press modes, block unbinding) unless asked; "simple" is the point.
+
+Keep the surface small, because that is what "compatible with everything" means here: no hooks, no vtable or
+record edits, input events are never consumed, no threads (use the task interface and a re-posting task for
+anything that has to wait, see `Attack::ScheduleDelayedPowerAttack`), and no config file shipped.
 
 ## Layout
 
 | Path | What it does |
 |---|---|
 | `src/Plugin.cpp` | `SKSEPlugin_Load` + messaging: config load, action init, input/UI registration. |
-| `src/Config.h/.cpp` | `Settings` (4 fields), JSON load/save next to the DLL, format version + migrations, validation, revision counter. |
-| `src/Attack.h/.cpp` | Resolves `AttackRight` / `PowerAttackRight`, submits them through the task interface, jump/block fallback. |
-| `src/Input.h/.cpp` | Key encoding (SKSE InputMap numbering), labels, the input sink, its gates, the menu-open sink. |
+| `src/Config.h/.cpp` | `Settings` (5 fields), JSON load/save next to the DLL, format version + migrations, validation, revision counter. |
+| `src/Attack.h/.cpp` | Resolves `AttackRight` / `PowerAttackRight`, submits them through the task interface, jump/block fallback as a task chain (no threads). |
+| `src/Input.h/.cpp` | Key encoding (SKSE InputMap numbering), labels, the tap sink (press + release inside the window), its gates, the menu-open sink. |
 | `src/UI.h/.cpp` | SKSE Menu Framework tab: rebinds, toggles, two-click reset. |
 | `src/Log.h` | `PA`/`PAI`/`PAW`/`PAE`, trace level, flushed per line. |
 | `extern/SKSEMenuFramework.h` | Vendored framework header (do not edit). |

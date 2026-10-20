@@ -39,7 +39,7 @@ namespace SPA
 		// written by a newer build survives a downgrade.
 		bool IsKnownKey(std::string_view a_key)
 		{
-			static constexpr std::string_view kKeys[] = { "version", "hotkey", "modifierKey", "allowZeroStamina", "logging" };
+			static constexpr std::string_view kKeys[] = { "version", "hotkey", "modifierKey", "tapWindowMs", "allowZeroStamina", "logging" };
 			return std::find(std::begin(kKeys), std::end(kKeys), a_key) != std::end(kKeys);
 		}
 
@@ -79,6 +79,7 @@ namespace SPA
 			json.update(nlohmann::json{
 				{ "hotkey", a_settings.hotkey },
 				{ "modifierKey", a_settings.modifierKey },
+				{ "tapWindowMs", a_settings.tapWindowMs },
 				{ "allowZeroStamina", a_settings.allowZeroStamina },
 				{ "logging", a_settings.logging },
 			});
@@ -144,6 +145,9 @@ namespace SPA
 			}
 			if (const auto value = ReadInt(a_json, "modifierKey")) {
 				s.modifierKey = *value;
+			}
+			if (const auto value = ReadInt(a_json, "tapWindowMs")) {
+				s.tapWindowMs = *value;
 			}
 			if (const auto value = ReadBool(a_json, "allowZeroStamina")) {
 				s.allowZeroStamina = *value;
@@ -239,8 +243,8 @@ namespace SPA
 	{
 		std::scoped_lock lock{ s_lock };
 		const auto& s = Get();
-		return std::format("hotkey={} modifier={} allowZeroStamina={} logging={}",
-			s.hotkey, s.modifierKey, s.allowZeroStamina, s.logging);
+		return std::format("hotkey={} modifier={} tap={}ms allowZeroStamina={} logging={}",
+			s.hotkey, s.modifierKey, s.tapWindowMs, s.allowZeroStamina, s.logging);
 	}
 
 	std::filesystem::path Config::Path()
@@ -269,6 +273,13 @@ namespace SPA
 		if (s.modifierKey == s.hotkey) {
 			PAW("config: modifierKey equals hotkey ({}), disabling the modifier", s.modifierKey);
 			s.modifierKey = kNoKey;
+			changed = true;
+		}
+		// A tap window outside the range is clamped rather than reset: keeping the user close to
+		// what they asked for beats throwing the value away.
+		if (s.tapWindowMs < kMinTapWindowMs || s.tapWindowMs > kMaxTapWindowMs) {
+			PAW("config: tapWindowMs {} out of range, clamping to [{}, {}]", s.tapWindowMs, kMinTapWindowMs, kMaxTapWindowMs);
+			s.tapWindowMs = (std::clamp)(s.tapWindowMs, kMinTapWindowMs, kMaxTapWindowMs);
 			changed = true;
 		}
 		return changed;

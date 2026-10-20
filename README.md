@@ -1,8 +1,8 @@
 # SKSE Power Attack
 
-Click mouse button 5 (or any key you bind) once and you power attack. **One DLL, nothing else** — no `.esp`,
-no `.esl`, no Papyrus, no MCM quest: a pure SKSE plugin that submits the vanilla `PowerAttackRight` action
-when you click.
+Tap mouse button 5 (or any key you bind) and you power attack — press and release inside the tap window;
+holding the key does nothing. **One DLL, nothing else** — no `.esp`, no `.esl`, no Papyrus, no MCM quest: a pure
+SKSE plugin that submits the vanilla `PowerAttackRight` action when you tap.
 
 > **AI-generated.** Every line of this plugin was written by an AI. No human authored or thoroughly reviewed
 > it, so treat it as a hobby project: expect rough edges, and check it yourself before trusting it in your
@@ -10,14 +10,16 @@ when you click.
 
 ## What it does
 
-- **One click = one power attack.** Every press of the configured key submits the vanilla right-hand power
-  attack action, so combos, stamina costs, perks and animations all behave exactly like a real power attack.
+- **Tap, not hold.** The power attack fires when the key is *released*, and only if the press was shorter than the
+  tap window (200 ms by default). A hold does nothing, so the key is safe to bind next to sprint or jump.
+- **One tap = one power attack.** Every tap submits the vanilla right-hand power attack action, so combos,
+  stamina costs, perks and animations all behave exactly like a real power attack.
 - **Jump / block fallback.** While jumping or blocking the power attack action is eaten by the engine, so in
   those two cases the plugin performs a normal right attack first and the power attack 200 ms later.
 - **Left alone:** bows, crossbows, staves, horses, killmoves, sitting/sleeping, paused game, dialogue.
 - **Empty stamina** is allowed by default (for mods that let you power attack at 0 stamina); one checkbox
   turns that off.
-- **Optional modifier:** bind e.g. Shift so only Shift+click power attacks.
+- **Optional modifier:** bind e.g. Shift so only Shift+tap power attacks.
 - **Settings tab** in [SKSE Menu Framework](https://www.nexusmods.com/skyrimspecialedition/mods/120352) with
   key rebinds, the stamina toggle and a logging switch. Every change saves itself.
 - Works without SKSE Menu Framework — the JSON keeps working on its own.
@@ -31,7 +33,8 @@ defaults on first run:
 |---|---|---|
 | `hotkey` | `260` | key that triggers the power attack (mouse button 5) |
 | `modifierKey` | `-1` | optional modifier; `-1` = none |
-| `allowZeroStamina` | `true` | allow the click with an empty stamina bar |
+| `tapWindowMs` | `200` | press *and* release inside this many ms, otherwise nothing happens (20–1000) |
+| `allowZeroStamina` | `true` | allow the tap with an empty stamina bar |
 | `logging` | `true` | write `SKSEPowerAttack.log` |
 | `version` | `1` | format of the file; written by the plugin, do not edit |
 
@@ -53,6 +56,23 @@ Key codes use SKSE's `InputMap` numbering:
 The default used to be the right mouse button (`257`); the file defaults to mouse 5 now. An existing
 `SKSEPowerAttack.json` keeps whatever it already contains, so change `hotkey` by hand or in the menu.
 
+## Compatibility
+
+- **Nothing in the load order.** No `.esp`/`.esl`, no records, no Papyrus, no MCM quest and no edits to game
+  files, so the only possible conflict is another plugin that submits a power attack on the same key.
+- **No hooks.** The plugin never patches game code, never rewrites a vtable and never edits a record: it reads
+  input events, looks up two vanilla actions and calls the engine's own `ProcessAction` through the task
+  interface.
+- **Input is never consumed.** Every event the plugin sees is passed on unchanged, so the game and every other
+  mod see exactly what they would without it.
+- **No threads.** The 200 ms jump/block fallback is a chain of main-thread tasks, not a worker thread.
+- **Menu optional.** With SKSE Menu Framework installed there is a settings tab; without it the menu is skipped
+  and the JSON still applies.
+- **Animation mods** (MCO/ADXP, Valhalla, Vanargand, ...) work because the vanilla action is submitted instead of
+  forcing an animation event.
+- **Gamepad** buttons bind like keys and mouse buttons.
+- **No VR support** — the binary resolves addresses through the Address Library for SE/AE.
+
 ## Requirements
 
 - Skyrim SE/AE
@@ -60,7 +80,8 @@ The default used to be the right mouse button (`257`); the file defaults to mous
 - [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444)
 - Optional: [SKSE Menu Framework](https://www.nexusmods.com/skyrimspecialedition/mods/120352)
 
-Built against CommonLibSSE-NG v13.0.0 (Address Library) and developed/tested on 1.6.1170 only.
+Built against CommonLibSSE-NG v13.0.0 (Address Library) and developed/tested on 1.6.1170 only. The DLL imports
+the same MSVC runtime as SKSE64 itself (VCRUNTIME140 / MSVCP140), so nothing else has to be installed.
 
 ## Install
 

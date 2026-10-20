@@ -70,6 +70,8 @@ namespace SPA
 		namespace
 		{
 			std::atomic<bool> s_modifierHeld{ false };
+			std::atomic<bool> s_modifierAtPress{ true };
+			std::atomic<std::int64_t> s_pressTicks{ 0 };
 			std::atomic<int>  s_clicks{ 0 };
 
 			bool IsRidingHorse(RE::Actor* a_actor)
@@ -78,7 +80,7 @@ namespace SPA
 			}
 
 			// Anything that makes a power attack meaningless or unsafe to submit. The reason is
-			// only logged when a click actually arrives, so a menu or a horse cannot flood the log.
+			// only logged when a tap actually arrives, so a menu or a horse cannot flood the log.
 			const char* GateReason(const Settings& a_settings)
 			{
 				auto* player = RE::PlayerCharacter::GetSingleton();
@@ -103,7 +105,7 @@ namespace SPA
 					return "in dialogue";
 				}
 
-				// Bows, crossbows and staves have no power attack; the click is theirs to handle.
+				// Bows, crossbows and staves have no power attack; the tap is theirs to handle.
 				if (auto* form = player->GetEquippedObject(false); form && form->IsWeapon()) {
 					if (auto* weapon = form->As<RE::TESObjectWEAP>(); weapon && (weapon->IsBow() || weapon->IsStaff() || weapon->IsCrossbow())) {
 						return "bow, crossbow or staff equipped";
@@ -160,24 +162,66 @@ namespace SPA
 								}
 							}
 
-							if (code != settings.hotkey || !down) {
+							if (code != settings.hotkey) {
 								continue;
 							}
 
-							if (settings.modifierKey != kNoKey && !s_modifierHeld.load(std::memory_order_acquire)) {
-								PA("input: '{}' pressed without the modifier '{}' held, ignoring",
+							if (button->Value() > 0.0f) {
+								// Press and every repeat while held. Only the first press arms the
+								// tap, and a hold never fires: the key can be bound next to sprint
+								// or jump without the power attack going off every frame.
+								if (down) {
+									s_pressTicks.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_release);
+									// The modifier has to be down when the tap starts; releasing it
+									// first and the hotkey second still counts.
+									s_modifierAtPress.store(
+										settings.modifierKey == kNoKey || s_modifierHeld.load(std::memory_order_acquire),
+										std::memory_order_release);
+									PAI("input: '{}' down, release within {} ms to power attack",
+										Keys::Describe(code), settings.tapWindowMs);
+								}
+								continue;
+							}
+
+							// Release: this is where the click is judged. The engine reports how long
+							// the button was down; the timestamp taken at the press covers the case
+							// where it does not.
+							const auto   pressed = s_pressTicks.exchange(0, std::memory_order_acq_rel);
+							const auto   held = button->HeldDuration();
+							const auto   now = std::chrono::steady_clock::now().time_since_epoch().count();
+							const auto   ticksPerSecond = static_cast<double>(std::chrono::steady_clock::period::den) /
+								static_cast<double>(std::chrono::steady_clock::period::num);
+							const double heldSeconds = held > 0.0f
+								? static_cast<double>(held)
+								: (pressed != 0 ? static_cast<double>(now - pressed) / ticksPerSecond : 0.0);
+							if (pressed == 0 && held <= 0.0f) {
+								PA("input: '{}' released without a recorded press, ignoring", Keys::Describe(code));
+								continue;
+							}
+
+							// Whole milliseconds on both sides, so the comparison matches the
+							// number shown in the menu and the JSON.
+							const int heldMs = static_cast<int>(std::lround(heldSeconds * 1000.0));
+							if (heldMs > settings.tapWindowMs) {
+								PAI("input: '{}' held {} ms > {} ms window, no power attack (hold)",
+									Keys::Describe(code), heldMs, settings.tapWindowMs);
+								continue;
+							}
+
+							if (!s_modifierAtPress.exchange(false, std::memory_order_acq_rel)) {
+								PA("input: tap on '{}' started without the modifier '{}', ignoring",
 									Keys::Describe(code), Keys::Describe(settings.modifierKey));
 								continue;
 							}
 
 							if (const char* reason = GateReason(settings)) {
-								PA("input: click ignored ({})", reason);
+								PA("input: tap ignored ({})", reason);
 								continue;
 							}
 
 							const auto click = s_clicks.fetch_add(1, std::memory_order_relaxed) + 1;
-							PAI("input: click #{} on '{}' -> power attack", click, Keys::Describe(code));
-							Attack::PowerAttack("click");
+							PAI("input: tap #{} on '{}' (held {} ms) -> power attack", click, Keys::Describe(code), heldMs);
+							Attack::PowerAttack("tap");
 						}
 					} catch (const std::exception& e) {
 						PAE("input: sink threw: {}", e.what());
@@ -190,7 +234,7 @@ namespace SPA
 			};
 
 		// The game keeps dispatching input while a menu is up, but a modifier held when the menu
-		// opened never gets its release: the menu eats it. Clearing on open means the click after
+		// opened never gets its release: the menu eats it. Clearing on open means the tap after
 		// a menu starts from "nothing held" instead of needing the modifier pressed twice.
 		class MenuSink : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
 		{
@@ -215,16 +259,20 @@ namespace SPA
 	void ResetState()
 	{
 		s_modifierHeld.store(false, std::memory_order_release);
-		PA("input: modifier state cleared");
+		s_modifierAtPress.store(true, std::memory_order_release);
+		// A press that was still waiting for its release is dropped: the release would otherwise
+		// arrive after a load and fire a power attack nobody asked for.
+		s_pressTicks.store(0, std::memory_order_release);
+		PA("input: modifier and pending tap state cleared");
 	}
 
 	void Register()
 	{
 		if (auto* manager = RE::BSInputDeviceManager::GetSingleton()) {
 			manager->AddEventSink(Sink::GetSingleton());
-			PAI("input: input sink registered (click '{}' to power attack)", Keys::Describe(Config::Cached().hotkey));
+			PAI("input: input sink registered (tap '{}' to power attack)", Keys::Describe(Config::Cached().hotkey));
 		} else {
-			PAE("input: BSInputDeviceManager singleton is null, the click will not work");
+			PAE("input: BSInputDeviceManager singleton is null, the tap will not work");
 		}
 
 		if (auto* ui = RE::UI::GetSingleton()) {

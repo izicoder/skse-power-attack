@@ -12,10 +12,16 @@ namespace SPA
 	constexpr int kNoKey = -1;
 	constexpr int kMaxKeyCode = 281;
 
+	// Tap window bounds in milliseconds, shared by the setting, its validation and the menu
+	// slider: below 20 ms a human cannot tap it anyway, and above a second it is a hold.
+	constexpr int kMinTapWindowMs = 20;
+	constexpr int kMaxTapWindowMs = 1000;
+
 	struct Settings
 	{
-		int  hotkey{ 260 };            // click this to power attack (260 = mouse button 5)
+		int  hotkey{ 260 };            // tap this to power attack (260 = mouse button 5)
 		int  modifierKey{ kNoKey };    // optional: hotkey only counts while this is held
+		int  tapWindowMs{ 200 };       // press AND release inside this window, otherwise nothing happens
 		bool allowZeroStamina{ true };  // power attack with an empty stamina bar (0 stamina mods)
 		bool logging{ true };          // write SKSEPowerAttack.log
 	};

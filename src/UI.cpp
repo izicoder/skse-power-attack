@@ -169,6 +169,22 @@ namespace SPA::UI
 			RenderBind("Modifier key (optional)", settings.modifierKey, Bind::kModifier, true);
 
 			ImGui::Spacing();
+			ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10.0f);
+			if (ImGui::SliderInt("Tap window (ms)", &settings.tapWindowMs, kMinTapWindowMs, kMaxTapWindowMs)) {
+				// The slider is the range, so this is only a guard against a hand-edited value.
+				settings.tapWindowMs = (std::clamp)(settings.tapWindowMs, kMinTapWindowMs, kMaxTapWindowMs);
+				Config::Touch();  // the game thread sees the new window while the slider is dragged
+			}
+			// Saving on release, not on every frame of a drag: one file write per adjustment.
+			if (ImGui::IsItemDeactivatedAfterEdit()) {
+				PAI("ui: tapWindowMs -> {}", settings.tapWindowMs);
+				SaveNow("tap window changed");
+			}
+			if (ImGui::IsItemHovered()) {
+				ImGui::SetTooltip("Press and release inside this many ms to power attack. Holding the key does nothing.");
+			}
+
+			ImGui::Spacing();
 			if (ImGui::Checkbox("Power attack with an empty stamina bar", &settings.allowZeroStamina)) {
 				PA("ui: allowZeroStamina -> {}", settings.allowZeroStamina);
 				Config::Touch();
@@ -229,7 +245,7 @@ namespace SPA::UI
 				auto& settings = Config::Get();
 				if (target == Bind::kHotkey) {
 					if (code == settings.modifierKey) {
-						// Binding the modifier as the hotkey would make the click impossible.
+						// Binding the modifier as the hotkey would make the tap impossible.
 						PAW("ui: '{}' is already the modifier, pick another key", Keys::Describe(code));
 						continue;
 					}

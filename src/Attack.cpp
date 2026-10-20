@@ -59,21 +59,44 @@ namespace SPA::Attack
 		// Jumping and blocking both eat the power attack action, so those two cases get the
 		// vanilla right attack first and the power attack a moment later. The short wait leaves
 		// the normal attack's window before the power attack lands.
+		//
+		// The wait is a chain of main-thread tasks, not a thread: a task checks the clock and
+		// re-posts itself until the delay is up. The plugin therefore starts no threads at all,
+		// and nothing ever calls into the engine from one.
+		constexpr auto kFallbackDelay = std::chrono::milliseconds(200);
+
+		void ScheduleDelayedPowerAttack(RE::Actor* a_actor, std::uint64_t a_generation, std::chrono::steady_clock::time_point a_due)
+		{
+			if (!s_task) {
+				PAE("attack: no task interface, the delayed power attack is dropped");
+				return;
+			}
+
+			s_task->AddTask([a_actor, a_generation, a_due]() {
+				try {
+					if (s_generation.load(std::memory_order_acquire) != a_generation) {
+						PA("attack: a save was loaded during the fallback delay, dropping it");
+						return;
+					}
+					if (std::chrono::steady_clock::now() < a_due) {
+						ScheduleDelayedPowerAttack(a_actor, a_generation, a_due);  // next frame
+						return;
+					}
+					PerformAction(s_rightPowerAttack, a_actor, "tap (after the jump/block attack)");
+				} catch (const std::exception& e) {
+					PAE("attack: the delayed power attack threw: {}", e.what());
+				} catch (...) {
+					PAE("attack: the delayed power attack threw a non-std exception");
+				}
+			});
+		}
+
 		void DelayedPowerAttack(RE::Actor* a_actor)
 		{
 			const auto generation = s_generation.load(std::memory_order_acquire);
-			try {
-				std::thread([a_actor, generation]() {
-					std::this_thread::sleep_for(std::chrono::milliseconds(200));
-					if (s_generation.load(std::memory_order_acquire) != generation) {
-						PA("attack: a save was loaded during the 200 ms wait, dropping the delayed power attack");
-						return;
-					}
-					PerformAction(s_rightPowerAttack, a_actor, "click (after the jump/block attack)");
-				}).detach();
-			} catch (const std::exception& e) {
-				PAE("attack: could not start the delayed power attack thread: {}", e.what());
-			}
+			PA("attack: power attack queued for {} ms after the normal attack (generation {})",
+				kFallbackDelay.count(), generation);
+			ScheduleDelayedPowerAttack(a_actor, generation, std::chrono::steady_clock::now() + kFallbackDelay);
 		}
 	}
 
@@ -83,7 +106,7 @@ namespace SPA::Attack
 		PAI("attack: task interface = 0x{:X}", reinterpret_cast<std::uintptr_t>(a_task));
 
 		if (const auto address = s_processAction.address(); address == 0) {
-			PAE("attack: ProcessAction has no address on this runtime, the click will do nothing");
+			PAE("attack: ProcessAction has no address on this runtime, the tap will do nothing");
 		}
 
 		s_rightAttack = RE::TESForm::LookupByID<RE::BGSAction>(0x13005);
@@ -100,7 +123,7 @@ namespace SPA::Attack
 	{
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		if (!player || !s_rightPowerAttack) {
-			PAE("attack: no player or no power attack action, ignoring the click");
+			PAE("attack: no player or no power attack action, ignoring the tap");
 			return;
 		}
 
@@ -111,7 +134,7 @@ namespace SPA::Attack
 		PA("attack: {} (jumping={} blocking={})", a_reason, isJumping, isBlocking);
 
 		if (isJumping || isBlocking) {
-			PerformAction(s_rightAttack, player, "click while jumping/blocking, normal attack first");
+			PerformAction(s_rightAttack, player, "tap while jumping/blocking, normal attack first");
 			DelayedPowerAttack(player);
 			return;
 		}
