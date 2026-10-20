@@ -43,13 +43,21 @@ bundle is reused via `COMMONLIB_PREBUILT_DIR` in the local preset. Do not switch
 `x64-windows-static-md`, build Debug, or drop `directxtk`/`rapidcsv` from `vcpkg.json` — the library's own
 `find_package` needs them.
 
-There are no automated tests. Verifying a change means building, enabling the mod, launching Skyrim and reading
-`…\Documents\My Games\Skyrim Special Edition\SKSE\SKSEPowerAttack.log`.
-
 Building never deploys. `tools/Deploy.ps1` copies the DLL into a mod folder and is the only thing that does;
 it refuses to run while `SkyrimSE` is open. Do not turn on `MOD_OUTPUT_FOLDER` in the build: a post-build copy
 would silently replace a DLL the running game has loaded. The default deploy target is
 `C:\Modding\MO2\mods\SKSE Power Attack` (the old `One Click Power Attack (SKSE)` folder is gone).
+
+## Verifying a change
+
+No automated tests. A change counts as verified when:
+
+1. `cmake --build build/vs2022` (or `Build-Release.ps1` when the version matters) ends with
+   `Linking CXX shared library SKSEPowerAttack.dll` and no error lines.
+2. `.\tools\Deploy.ps1` puts it in the MO2 folder (refuses while `SkyrimSE` runs), the mod is enabled, Skyrim is
+   launched.
+3. `…\Documents\My Games\Skyrim Special Edition\SKSE\SKSEPowerAttack.log` shows the banner, `config: loaded:`,
+   `input: input sink registered` and then one `tap #N ...` line per tap - see the log lines under Gotchas.
 
 ## Release and the mod page
 
@@ -57,8 +65,9 @@ would silently replace a DLL the running game has loaded. The default deploy tar
   `.\tools\Publish-Release.ps1 -Version x.y.z -Nexus -GitHub` (`-DryRun` first to validate). Building never
   publishes and publishing never builds.
 - The mod is **live** on Nexus as `196152` (`https://www.nexusmods.com/skyrimspecialedition/mods/196152`) and
-  on GitHub as `izicoder/skse-power-attack`. The API key lives outside the repo: `$env:NEXUS_API_KEY` or
-  `%USERPROFILE%\.pi\nexus-api-key.txt`; GitHub goes through `gh`.
+  on GitHub as `izicoder/skse-power-attack` (as of 0.2.1). The API key lives outside the repo:
+  `$env:NEXUS_API_KEY` or `%USERPROFILE%\.pi\nexus-api-key.txt`; GitHub goes through `gh` (signed in as
+  `izicoder`).
 - Nexus has two id spaces: `196152` is the game-scoped id from the URL; the v3 ids (mod `7318624468536`,
   mod-file `8200119`) are what the upload API takes and are re-resolved on every run. Never hardcode a v3 id.
 - The API can only add a **version** to an existing file entry — the first upload for a new mod is manual.
@@ -91,6 +100,12 @@ would silently replace a DLL the running game has loaded. The default deploy tar
   place; `config: importing the settings left by the earlier build` in the log is correct, not a bug.
 - Reading a test run: `tap #N on '<key>' (held N ms) -> power attack`, `held N ms > 200 ms window, no power
   attack (hold)`, `tap ignored (<reason>)`, `input: menu '<name>' opened, dropping the modifier state`.
+- Publishing to GitHub refuses with "HEAD (...) is not pushed to its upstream branch": push first, the release
+  is pinned to that exact commit.
+- Release tags only exist on the remote (`gh` creates them), so a local `git describe --tags` finds nothing and
+  the default notes fall back to the whole history. `git fetch --tags` before publishing, or pass `-Notes`.
+- The repo is codegraph-indexed (`.codegraph/`, git-ignored): ask `codegraph_explore` for architecture and
+  flow questions, and re-run `codegraph index` after a large refactor.
 
 ## Conventions
 
