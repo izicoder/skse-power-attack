@@ -1,0 +1,458 @@
+#requires -Version 7.0
+<#
+.SYNOPSIS
+	Publishes a packaged SKSE Power Attack release to Nexus Mods and/or GitHub, only when you ask for it.
+
+.DESCRIPTION
+	tools\Build-Release.ps1 builds the plugin and writes packages\SKSEPowerAttack-<Version>.zip and never
+	touches the network. This is the other half, and it is deliberately a separate script invoked by hand:
+	a build, a deploy or a re-package can never publish anything, because publishing happens only when
+	-Nexus or -GitHub is named on the command line.
+
+	Nexus goes through the public v3 Upload API - the same multipart-upload + finalise + create-version
+	flow as Nexus-Mods/upload-action. Nexus has two id spaces: v1 (and the mod page URL) is game-scoped,
+	v3 addresses mods and files by its own global ids, so the mod and file ids are resolved from the
+	game-scoped -ModId on every run instead of being hardcoded. The file entry has to exist already (the
+	first upload is done on the site); the API can only add versions to one. After the version is created
+	the mod's displayed version is synced to it and the notes are posted as a changelog entry.
+
+	GitHub goes through the gh CLI (authenticated on this machine) and attaches the same archive. The tag
+	is v<Version> and the release body is the notes.
+
+	In both cases the notes default to the commit subjects since the last release tag, so the changelog
+	mirrors the git log without a second file to maintain; -Notes replaces them.
+
+	Two guards exist because a wrong publish cannot be undone from here: the DLL inside the archive must
+	report the -Version being published (a stale build tree or a -SkipBuild package is the usual way a
+	release goes out with the wrong number), and a Nexus file entry that already sits at that version is
+	refused unless -Force is given (re-uploading would create a duplicate version).
+
+.PARAMETER Version
+	The release being published, e.g. 0.2.1. Must match packages\SKSEPowerAttack-<Version>.zip as produced
+	by Build-Release.ps1.
+
+.PARAMETER Nexus
+	Upload the archive to Nexus Mods as a new version of -FileId.
+
+.PARAMETER GitHub
+	Create the GitHub release v<Version> and attach the archive.
+
+.PARAMETER Notes
+	Release notes / changelog text. Defaults to the commit subjects since the last release tag.
+
+.PARAMETER Archive
+	Archive to publish. Defaults to packages\SKSEPowerAttack-<Version>.zip next to the repo root.
+
+.PARAMETER V3FileId
+	Nexus v3 file id to add a version to, when the mod has more than one active file entry. Normally left
+	unset: the single active file is found automatically. This is the v3 id, not the file_id the v1 API and
+	the mod page use for a file version.
+
+.PARAMETER ModId
+	Nexus mod id as it appears in the mod page URL (the game-scoped id), used for the lookup and for the
+	changelog entry. 196152 is this mod's page.
+
+.PARAMETER ApiKey
+	Nexus API key. Defaults to $env:NEXUS_API_KEY, then to %USERPROFILE%\.pi\nexus-api-key.txt (kept outside
+	the repo on purpose). The key is never printed.
+
+.PARAMETER DryRun
+	Validate the archive, the Nexus ids and the pushed commit, print what would be uploaded, and publish
+	nothing. The only network calls are read-only.
+
+.PARAMETER Force
+	Publish a version the Nexus file entry already reports. Only for re-doing a publish that failed
+	half-way; it creates a second version with the same number.
+
+.EXAMPLE
+	# publish 0.2.1 to both places
+	.\tools\Publish-Release.ps1 -Version 0.2.1 -Nexus -GitHub
+
+.EXAMPLE
+	# see exactly what would happen, without uploading anything
+	.\tools\Publish-Release.ps1 -Version 0.2.1 -Nexus -GitHub -DryRun
+
+.EXAMPLE
+	# only the archive and one-line notes, Nexus only
+	.\tools\Publish-Release.ps1 -Version 0.2.1 -Nexus -Notes 'Power attack fires on a tap, not a hold.'
+#>
+[CmdletBinding()]
+param(
+	[Parameter(Mandatory)][string]$Version,
+	[switch]$Nexus,
+	[switch]$GitHub,
+	[string]$Notes,
+	[string]$Archive,
+	[int]$ModId = 196152,
+	[string]$V3FileId = '',
+	[string]$ApiKey,
+	[switch]$DryRun,
+	[switch]$Force
+)
+
+$ErrorActionPreference = 'Stop'
+$root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+
+if ($Version -notmatch '^\d+(\.\d+){1,3}$') { throw "-Version must look like 0.2.1, got '$Version'." }
+if (-not ($Nexus -or $GitHub)) { throw 'Nothing to publish: pass -Nexus and/or -GitHub.' }
+if (-not $Archive) { $Archive = Join-Path $root "packages\SKSEPowerAttack-$Version.zip" }
+if (-not (Test-Path $Archive)) {
+	throw "No archive at $Archive - build it first: .\tools\Build-Release.ps1 -Version $Version"
+}
+$archiveItem = Get-Item $Archive
+
+$tag = "v$Version"
+$nexusBase = 'https://api.nexusmods.com/v3'
+$game = 'skyrimspecialedition'
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+function Test-ReleaseArchive
+{
+	param([string]$Path, [string]$Version)
+
+	# A release with no DLL in it is a broken package. Checking here means failing before Nexus has a
+	# file version to undo, and before GitHub has a release pointing at nothing.
+	Add-Type -AssemblyName System.IO.Compression.FileSystem
+	$zip = [System.IO.Compression.ZipFile]::OpenRead($Path)
+	try {
+		$names = @($zip.Entries | ForEach-Object { $_.FullName })
+		if ($names -notcontains 'SKSE/Plugins/SKSEPowerAttack.dll') {
+			throw "$Path does not contain SKSE/Plugins/SKSEPowerAttack.dll - refusing to publish it."
+		}
+		# A config file in the archive would replace the settings of every existing install.
+		if ($names | Where-Object { $_ -like '*SKSEPowerAttack.json' }) {
+			throw "$Path ships SKSEPowerAttack.json - the plugin writes that file itself, so it must not be in the archive."
+		}
+
+		# -Version is a claim about the archive, and the plugin logs SPA_VERSION at startup, so that
+		# string literal sits in the DLL. Reading it back catches the one way a release goes out wrong
+		# without anyone noticing: a stale build tree (or -SkipBuild) packaged under a new number.
+		$stream = $zip.GetEntry('SKSE/Plugins/SKSEPowerAttack.dll').Open()
+		try {
+			$memory = [System.IO.MemoryStream]::new()
+			$stream.CopyTo($memory)
+			$bytes = $memory.ToArray()
+		}
+		finally { $stream.Dispose() }
+	}
+	finally { $zip.Dispose() }
+
+	# Latin1 decodes byte-for-byte, and the null terminator on the needle stops "0.2.1" from matching
+	# inside a longer literal such as "0.2.10".
+	$text = [System.Text.Encoding]::Latin1.GetString($bytes)
+	if ($text.IndexOf("$Version`0", [System.StringComparison]::Ordinal) -lt 0) {
+		throw "The DLL in $Path does not report version $Version - it was built with a different -Version (usually a stale build tree, or -SkipBuild after a bump). Rebuild it before publishing."
+	}
+
+	return $names
+}
+
+function Invoke-Git
+{
+	param([string[]]$Arguments)
+	$output = & git -C $root @Arguments
+	if ($LASTEXITCODE -ne 0) { throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE." }
+	return $output
+}
+
+function Get-ReleaseNotes
+{
+	param([string]$Override, [string]$Version)
+
+	if ($Override) { return $Override.Trim() }
+
+	# The previous publish is what created the last tag, so the range between it and HEAD is exactly
+	# "what changed since the release users have". With no tag yet (or none reachable) the whole
+	# history is the honest answer, capped so a first release does not post 300 lines.
+	$lastTag = (& git -C $root describe --tags --abbrev=0 2>$null)
+	$range = if ($LASTEXITCODE -eq 0 -and $lastTag) { "$lastTag..HEAD" } else { 'HEAD' }
+	$subjects = @(& git -C $root log $range --pretty=format:'- %s' --max-count=100)
+	if ($LASTEXITCODE -ne 0) { throw "git log $range failed with exit code $LASTEXITCODE." }
+	if ($subjects.Count -eq 0) { return "SKSE Power Attack $Version." }
+	return ($subjects -join "`n")
+}
+
+# ---------------------------------------------------------------------------
+# Nexus Mods (v3 Upload API)
+# ---------------------------------------------------------------------------
+function Get-NexusApiKey
+{
+	param([string]$Explicit)
+
+	if ($Explicit) { return $Explicit.Trim() }
+	if ($env:NEXUS_API_KEY) { return $env:NEXUS_API_KEY.Trim() }
+
+	# Stored outside the repo deliberately: this file must never be committed or end up in an archive.
+	$file = Join-Path $env:USERPROFILE '.pi\nexus-api-key.txt'
+	if (Test-Path $file) { return (Get-Content $file -Raw).Trim() }
+
+	throw 'No Nexus API key: set NEXUS_API_KEY or write one to %USERPROFILE%\.pi\nexus-api-key.txt.'
+}
+
+function Invoke-ApiRequest
+{
+	<#
+		One wrapper for every API call so failures read like something actionable. -SkipHttpErrorCheck
+		is the point: it keeps the response body (Nexus puts the reason there) instead of throwing a
+		WebException that hides it.
+	#>
+	param(
+		[string]$Method,
+		[string]$Uri,
+		[hashtable]$Headers,
+		$Body,
+		[string]$ContentType = 'application/json'
+	)
+
+	$parameters = @{
+		Method             = $Method
+		Uri                = $Uri
+		SkipHttpErrorCheck = $true
+		StatusCodeVariable = 'statusCode'
+		TimeoutSec         = 300
+	}
+	if ($Headers) { $parameters.Headers = $Headers }
+	if ($null -ne $Body) {
+		$parameters.Body = $Body
+		$parameters.ContentType = $ContentType
+	}
+
+	$response = Invoke-RestMethod @parameters
+	if ($statusCode -ge 300) {
+		$detail = if ($response -is [string]) { $response } else { $response | ConvertTo-Json -Depth 8 -Compress }
+		throw "$Method $Uri failed with HTTP $statusCode`: $detail"
+	}
+	return $response
+}
+
+function Send-UploadPart
+{
+	# The presigned URL signs Content-Type and Content-Length, so both go out exactly as the reference
+	# client (Nexus-Mods/upload-action) sends them, and nothing else does.
+	param([string]$Url, [byte[]]$Bytes, [int]$Number, [int]$Total)
+
+	Write-Host ("  part {0}/{1} ({2:N0} bytes)" -f $Number, $Total, $Bytes.Length)
+	# -SkipHttpErrorCheck keeps the body of an error response instead of throwing a WebException that
+	# hides it. Invoke-WebRequest has no -StatusCodeVariable, unlike Invoke-RestMethod, so the status
+	# is read off the response object.
+	$response = Invoke-WebRequest -Method Put -Uri $Url -Body $Bytes `
+		-ContentType 'application/octet-stream' -SkipHttpErrorCheck -TimeoutSec 600
+	if ($response.StatusCode -ge 300) { throw "Part $Number upload failed with HTTP $($response.StatusCode)`": $($response.Content)" }
+
+	# The ETag comes back quoted; S3 wants it unquoted in the completion XML.
+	$etag = $response.Headers['ETag']
+	if (-not $etag) { $etag = $response.Headers['etag'] }
+	if ($etag -is [array]) { $etag = $etag[0] }
+	if (-not $etag) { throw "Part $Number upload returned no ETag." }
+	return ([string]$etag).Trim('"')
+}
+
+function Publish-NexusFile
+{
+	param(
+		[string]$Key,
+		[string]$Path,
+		[string]$V3FileId,
+		[int]$ModId,
+		[string]$Version,
+		[string]$Notes,
+		[switch]$DryRun,
+		[switch]$Force
+	)
+
+	$headers = @{ apikey = $Key; 'User-Agent' = 'SKSEPowerAttack/release' }
+
+	# v1 and v3 do not share ids: a v1 file_id used in a /v3/mod-files/... path addresses a different
+	# file entirely (usually someone else's, which answers 403 "no permission to upload"). So resolve
+	# the game-scoped mod id to its v3 mod id, then to the v3 id of the file entry.
+	$mod = (Invoke-ApiRequest -Method Get -Uri "$nexusBase/games/$game/mods/$ModId" -Headers $headers).data
+	# An unpublished mod comes back with ids only (no name), so the label falls back to the id.
+	$label = if ($mod.PSObject.Properties['name'] -and $mod.name) { "'$($mod.name)'" } else { "mod $ModId (unpublished)" }
+	Write-Host "Nexus: $label, v3 id $($mod.id)"
+
+	$files = @((Invoke-ApiRequest -Method Get -Uri "$nexusBase/mods/$($mod.id)/files" -Headers $headers).data.mod_files)
+	$active = @($files | Where-Object { $_.is_active })
+	if ($active.Count -eq 0) {
+		# The API has no "create a file entry" call. The first upload has to happen on the mod page, and
+		# every later release is a new version of that entry.
+		throw "Mod $ModId has no file entry yet. Upload the first archive on the site (Manage files -> Upload), then this script can add versions to it."
+	}
+	if ($V3FileId) {
+		$targetFile = $active | Where-Object { $_.id -eq $V3FileId } | Select-Object -First 1
+		if (-not $targetFile) { throw "v3 file $V3FileId is not an active file of mod $ModId." }
+	}
+	elseif ($active.Count -eq 1) { $targetFile = $active[0] }
+	else {
+		$names = ($active | ForEach-Object { "$($_.id) '$($_.name)'" }) -join ', '
+		throw "Mod $ModId has $($active.Count) active files ($names); pass -V3FileId to choose one."
+	}
+
+	$versions = @((Invoke-ApiRequest -Method Get -Uri "$nexusBase/mod-files/$($targetFile.id)/versions" -Headers $headers).data.versions)
+	$primary = $versions | Where-Object { $_.is_primary } | Select-Object -First 1
+	$current = if ($primary) { $primary.version } else { '(none)' }
+	Write-Host "  file $($targetFile.id) '$($targetFile.name)' - $($versions.Count) version(s), primary $current"
+
+	# Nexus happily accepts a second version carrying the same number, and the API has no delete for
+	# one. A half-failed publish is the only reason to want that, so it has to be asked for.
+	if ($versions | Where-Object { $_.version -eq $Version }) {
+		if (-not $Force) {
+			throw "File $($targetFile.id) already has a $Version version on Nexus - publishing it again would create a duplicate. Pass -Force only if that is what you want."
+		}
+		Write-Warning "File $($targetFile.id) already has a $Version version; -Force given, so this adds a second one with the same number."
+	}
+
+	if ($DryRun) {
+		Write-Host ("Dry run: would upload {0} ({1:N0} bytes) as version {2} of v3 file {3}, sync the mod version and post the changelog." -f `
+			(Split-Path $Path -Leaf), (Get-Item $Path).Length, $Version, $targetFile.id)
+		return
+	}
+
+	# 1. Ask for a multipart upload session; Nexus answers with one presigned URL per part.
+	$size = (Get-Item $Path).Length
+	$body = @{ filename = (Split-Path $Path -Leaf); size_bytes = "$size" } | ConvertTo-Json -Compress
+	$session = (Invoke-ApiRequest -Method Post -Uri "$nexusBase/uploads/multipart" -Headers $headers -Body $body).data
+	$uploadId = $session.id
+	$partUrls = @($session.part_presigned_urls)
+	if ($partUrls.Count -eq 0) { throw "Upload $uploadId came back with no part URLs." }
+	$partSize = [int]$session.part_size_bytes
+	Write-Host "  upload $uploadId`: $($partUrls.Count) part(s) of $partSize bytes"
+
+	# 2. PUT every part and keep the ETags: completion is impossible without them.
+	$parts = @()
+	$stream = [System.IO.File]::OpenRead($Path)
+	try {
+		for ($i = 0; $i -lt $partUrls.Count; $i++) {
+			$buffer = [byte[]]::new($partSize)
+			$read = 0
+			while ($read -lt $partSize) {
+				$n = $stream.Read($buffer, $read, $partSize - $read)
+				if ($n -le 0) { break }
+				$read += $n
+			}
+			if ($read -eq 0) { break }
+			$chunk = if ($read -eq $partSize) { $buffer } else { $buffer[0..($read - 1)] }
+			$etag = Send-UploadPart -Url $partUrls[$i] -Bytes $chunk -Number ($i + 1) -Total $partUrls.Count
+			$parts += [pscustomobject]@{ Number = $i + 1; ETag = $etag }
+		}
+	}
+	finally { $stream.Dispose() }
+
+	# 3. Close the S3 multipart upload with the part list.
+	$xml = '<CompleteMultipartUpload>' + (($parts | ForEach-Object {
+		"<Part><PartNumber>$($_.Number)</PartNumber><ETag>$($_.ETag)</ETag></Part>"
+	}) -join '') + '</CompleteMultipartUpload>'
+	Invoke-ApiRequest -Method Post -Uri $session.complete_presigned_url -Body $xml -ContentType 'application/xml' | Out-Null
+
+	# 4. finalise, then wait until Nexus has scanned the archive: versions can only be attached to an
+	#    upload in the "available" state, and that lag is Nexus', not a bug here.
+	Invoke-ApiRequest -Method Post -Uri "$nexusBase/uploads/$uploadId/finalise" -Headers $headers | Out-Null
+	$state = ''
+	for ($attempt = 0; $attempt -lt 60; $attempt++) {
+		$state = (Invoke-ApiRequest -Method Get -Uri "$nexusBase/uploads/$uploadId" -Headers $headers).data.state
+		if ($state -eq 'available') { break }
+		Start-Sleep -Milliseconds ([Math]::Min(2000 * [Math]::Pow(1.5, $attempt), 30000))
+	}
+	if ($state -ne 'available') { throw "Upload $uploadId never became available (last state '$state')." }
+	Write-Host '  upload is available'
+
+	# 5. Attach the upload as a new version of the existing file entry, and pull the mod's displayed
+	#    version along with it so the page and the DLL cannot disagree.
+	$versionBody = @{
+		upload_id                    = $uploadId
+		name                         = "SKSE Power Attack $Version"
+		version                      = $Version
+		file_category                = 'main'
+		update_mod_version           = $true
+		primary_mod_manager_download = $true
+		allow_mod_manager_download   = $true
+	} | ConvertTo-Json -Compress
+	$created = (Invoke-ApiRequest -Method Post -Uri "$nexusBase/mod-files/$($targetFile.id)/versions" -Headers $headers -Body $versionBody).data.version
+	Write-Host "  created file version $($created.id)"
+
+	# The primary flag can only be set when a version is created - there is no endpoint to change it
+	# afterwards. If Nexus kept the old version primary anyway, the mod page and MO2/Vortex would keep
+	# handing out the previous download, so say it loudly instead of reporting a clean success.
+	$after = @((Invoke-ApiRequest -Method Get -Uri "$nexusBase/mod-files/$($targetFile.id)/versions" -Headers $headers).data.versions)
+	$ours = $after | Where-Object { $_.version -eq $Version } | Select-Object -First 1
+	if ($ours -and -not $ours.is_primary) {
+		Write-Warning "Version $Version is published, but Nexus kept another version as the primary mod manager download - flip it on the mod page (Manage files)."
+	}
+
+	# 6. The changelog is what users actually read on the mod page, so it gets the same text as the
+	#    GitHub release body. It is the only cosmetic step, and it runs after the version is live, so a
+	#    failure here must not fail the publish - that would push towards re-uploading and a duplicate.
+	if ($Notes) {
+		$changelogBody = @{ version = $Version; changelog = $Notes } | ConvertTo-Json -Compress
+		try {
+			Invoke-ApiRequest -Method Post -Uri "$nexusBase/mods/$($mod.id)/changelogs" -Headers $headers -Body $changelogBody | Out-Null
+			Write-Host '  changelog entry added'
+		}
+		catch {
+			Write-Warning "The file version is published, but adding the changelog entry failed: $($_.Exception.Message) - add it on the mod page."
+		}
+	}
+}
+
+# ---------------------------------------------------------------------------
+# GitHub (gh CLI)
+# ---------------------------------------------------------------------------
+function Publish-GitHubRelease
+{
+	param([string]$Path, [string]$Version, [string]$Notes, [switch]$DryRun)
+
+	# gh creates the tag itself, but it would default to the remote's default branch: if HEAD is not
+	# pushed, the release would claim to be a commit nobody else can see. Refuse instead.
+	# @() because a single-line git output comes back as a bare string, and indexing a string yields
+	# its first character rather than its first line.
+	$head = @(Invoke-Git @('rev-parse', 'HEAD'))[0].Trim()
+	$upstream = (& git -C $root rev-parse '@{u}' 2>$null | Select-Object -First 1)
+	if ($upstream) { $upstream = $upstream.Trim() }
+	if (-not $upstream -or $upstream -ne $head) {
+		throw "HEAD ($($head.Substring(0, 7))) is not pushed to its upstream branch - push the release commit first."
+	}
+
+	if (Invoke-Git @('status', '--porcelain')) {
+		Write-Warning 'Working tree has uncommitted changes; the release is made from the pushed commit anyway.'
+	}
+
+	if ($DryRun) {
+		Write-Host "Dry run: would create GitHub release $tag at $($head.Substring(0, 7)) with $([System.IO.Path]::GetFileName($Path))"
+		Write-Host 'Notes:'
+		Write-Host $Notes
+		return
+	}
+
+	$tmp = Join-Path ([System.IO.Path]::GetTempPath()) "sksepowerattack-$Version-notes.md"
+	Set-Content -Path $tmp -Value $Notes -Encoding utf8
+	try {
+		# --target pins the tag to the commit just verified instead of letting gh guess.
+		& gh release create $tag $Path --title "SKSE Power Attack $Version" --notes-file $tmp --target $head
+		if ($LASTEXITCODE -ne 0) { throw "gh release create $tag failed with exit code $LASTEXITCODE." }
+	}
+	finally { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+	Write-Host "  GitHub release $tag created"
+}
+
+# ---------------------------------------------------------------------------
+# Go
+# ---------------------------------------------------------------------------
+Write-Host ("Publishing SKSE Power Attack {0}: {1} ({2:N0} bytes)" -f `
+	$Version, $archiveItem.Name, $archiveItem.Length)
+Write-Host "  archive has $((Test-ReleaseArchive -Path $archiveItem.FullName -Version $Version).Count) entries"
+
+$notes = Get-ReleaseNotes -Override $Notes -Version $Version
+
+if ($Nexus) {
+	$key = Get-NexusApiKey -Explicit $ApiKey
+	Publish-NexusFile -Key $key -Path $archiveItem.FullName -V3FileId $V3FileId -ModId $ModId `
+		-Version $Version -Notes $notes -DryRun:$DryRun -Force:$Force
+}
+
+if ($GitHub) {
+	Publish-GitHubRelease -Path $archiveItem.FullName -Version $Version -Notes $notes -DryRun:$DryRun
+}
+
+if ($DryRun) { Write-Host 'Dry run: nothing was published.' }
+else { Write-Host 'Done.' }

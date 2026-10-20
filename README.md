@@ -127,6 +127,23 @@ no config file is shipped and the plugin has to create one on first run.
 archives exactly what is installed in that mod folder (the honest "what the game runs" build);
 `-Output <path>` writes the archive somewhere else. No config file is ever shipped.
 
+## Publishing a release
+
+Only when asked, and never as part of a build:
+
+```powershell
+.\tools\Publish-Release.ps1 -Version 0.2.1 -Nexus -GitHub -DryRun   # validate, upload nothing
+.\tools\Publish-Release.ps1 -Version 0.2.1 -Nexus -GitHub
+```
+
+The Nexus key comes from `$env:NEXUS_API_KEY` or `%USERPROFILE%\.pi\nexus-api-key.txt`; GitHub uses `gh`.
+Both paths refuse a stale archive: the DLL inside the zip must report the `-Version` being published (it is
+stamped by `Build-Release.ps1`), and a version number the Nexus file entry already has is refused unless
+`-Force` is given. Release notes default to the commit subjects since the last release tag; `-Notes "..."` overrides.
+
+The Nexus side only adds **versions to an existing file entry** — the API has no call to create one, so the
+first archive for a new mod is uploaded on the mod page by hand.
+
 ## Logging
 
 `…\Documents\My Games\Skyrim Special Edition\SKSE\SKSEPowerAttack.log`, trace level, flushed every line.

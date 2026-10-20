@@ -26,6 +26,7 @@ anything that has to wait, see `Attack::ScheduleDelayedPowerAttack`), and no con
 | `extern/SKSEMenuFramework.h` | Vendored framework header (do not edit). |
 | `tools/Deploy.ps1` | Manual deploy of the built DLL into one mod folder (refuses while Skyrim runs). |
 | `tools/Build-Release.ps1` | Version-stamped build + `packages/SKSEPowerAttack-<version>.zip` for test installs. |
+| `tools/Publish-Release.ps1` | Uploads that zip to Nexus (v3 API) and/or a GitHub release — only when named on the command line. |
 
 ## Build
 
