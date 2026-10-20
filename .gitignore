@@ -5,6 +5,9 @@ out/
 # Release/test archives staged by tools/Build-Release.ps1
 packages/
 
+# Browser automation output (page snapshots, console logs)
+.playwright-mcp/
+
 # Local vcpkg checkout
 .vcpkg/
 
