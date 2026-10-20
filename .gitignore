@@ -1,0 +1,21 @@
+# Build output
+build/
+out/
+
+# Local vcpkg checkout
+.vcpkg/
+
+# Cloned dependency (populated by CMakeLists.txt, copied from skyrim-blink)
+extern/CommonLibSSE/
+
+# Per-machine CMake presets (holds local paths such as MOD_OUTPUT_FOLDER)
+CMakeUserPresets.json
+
+# Editor / IDE / tooling
+*.user
+*.pdb
+*.log
+.vs/
+.cache/
+.codegraph/
+.pi/
