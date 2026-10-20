@@ -15,7 +15,7 @@ namespace SPA
 
 	struct Settings
 	{
-		int  hotkey{ 257 };            // click this to power attack (257 = right mouse)
+		int  hotkey{ 260 };            // click this to power attack (260 = mouse button 5)
 		int  modifierKey{ kNoKey };    // optional: hotkey only counts while this is held
 		bool allowZeroStamina{ true };  // power attack with an empty stamina bar (0 stamina mods)
 		bool logging{ true };          // write SKSEPowerAttack.log

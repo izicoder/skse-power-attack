@@ -141,7 +141,7 @@ namespace SPA
 
 		// 0 is a legal scancode, so "no key" is -1 and every code above the gamepad block is junk.
 		if (s.hotkey < 0 || s.hotkey > kMaxKeyCode) {
-			PAW("config: hotkey {} is not bindable, restoring the default 257 (right mouse)", s.hotkey);
+			PAW("config: hotkey {} is not bindable, restoring the default 260 (mouse button 5)", s.hotkey);
 			s.hotkey = Settings{}.hotkey;
 			changed = true;
 		}

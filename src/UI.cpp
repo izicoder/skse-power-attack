@@ -122,7 +122,7 @@ namespace SPA::UI
 			}
 
 			ImGui::SeparatorText("Reset");
-			if (ImGui::Button("Reset defaults (right mouse, no modifier)")) {
+			if (ImGui::Button("Reset defaults (mouse 5, no modifier)")) {
 				PAI("ui: reset to defaults (was: {})", Config::Describe());
 				EndCapture();
 				Config::ResetToDefaults();

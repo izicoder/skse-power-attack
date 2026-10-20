@@ -1,8 +1,8 @@
 # SKSE Power Attack
 
-Click the right mouse button once and you power attack. **One DLL, nothing else** — no `.esp`, no `.esl`,
-no Papyrus, no MCM quest: a pure SKSE plugin that submits the vanilla `PowerAttackRight` action when you
-click.
+Click mouse button 5 (or any key you bind) once and you power attack. **One DLL, nothing else** — no `.esp`,
+no `.esl`, no Papyrus, no MCM quest: a pure SKSE plugin that submits the vanilla `PowerAttackRight` action
+when you click.
 
 Inspired by [One Click Power Attack](https://www.nexusmods.com/skyrimspecialedition/mods/60878) by jarari,
 reduced to the one thing that mod's name promises.
@@ -28,7 +28,7 @@ defaults on first run:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `hotkey` | `257` | key that triggers the power attack |
+| `hotkey` | `260` | key that triggers the power attack (mouse button 5) |
 | `modifierKey` | `-1` | optional modifier; `-1` = none |
 | `allowZeroStamina` | `true` | allow the click with an empty stamina bar |
 | `logging` | `true` | write `SKSEPowerAttack.log` |
@@ -38,6 +38,9 @@ Key codes use SKSE's `InputMap` numbering (the same values the original mod's `s
 - `0`–`255` — keyboard scancode (e.g. `42` = left shift, `29` = left ctrl)
 - `256`–`263` — mouse button (`256` left, `257` right, `258` middle, …)
 - `266`–`281` — gamepad (dpad, start/back, sticks, shoulders, A/B/X/Y, LT/RT)
+
+The default used to be the right mouse button (`257`); the file defaults to mouse 5 now. An existing
+`SKSEPowerAttack.json` keeps whatever it already contains, so change `hotkey` by hand or in the menu.
 
 ## Requirements
 
