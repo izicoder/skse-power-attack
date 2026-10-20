@@ -40,9 +40,9 @@ bundle is reused via `COMMONLIB_PREBUILT_DIR` in the local preset. Do not switch
 There are no automated tests. Verifying a change means building, enabling the mod, launching Skyrim and reading
 `…\Documents\My Games\Skyrim Special Edition\SKSE\SKSEPowerAttack.log`.
 
-Never build with `MOD_OUTPUT_FOLDER` pointing at an enabled MO2 mod while the game is running: the post-build
-copy replaces a DLL the running process has loaded. Configure with `-DMOD_OUTPUT_FOLDER=` for a local-only
-build.
+Building never deploys. `tools/Deploy.ps1` copies the DLL into a mod folder and is the only thing that does;
+it refuses to run while `SkyrimSE` is open. Do not turn on `MOD_OUTPUT_FOLDER` in the build: a post-build copy
+would silently replace a DLL the running game has loaded.
 
 ## Conventions
 

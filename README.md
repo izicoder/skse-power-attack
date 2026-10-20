@@ -64,13 +64,21 @@ Requires VS 2022/18 with the C++ workload, CMake + Ninja and a vcpkg checkout. B
 
 ```powershell
 $env:VCPKG_ROOT = "E:/dev/vibe/skyrim-blink/.vcpkg"   # any vcpkg checkout
-cmake --preset vs2022-local                          # local preset also deploys to MO2
+cmake --preset vs2022-local
 cmake --build build/vs2022
 ```
 
-`CMakeUserPresets.json` (git-ignored) points `MOD_OUTPUT_FOLDER` at the MO2 mod folder and
-`COMMONLIB_PREBUILT_DIR` at the prebuilt CommonLibSSE bundle already extracted by the `skyrim-blink` project,
-so nothing is rebuilt from source. Drop the latter to let CMake download the bundle instead.
+The build only produces `build/vs2022/SKSEPowerAttack.dll` — it never touches your mod list. Deploying is a
+deliberate step, and it refuses to run while Skyrim is open:
+
+```powershell
+.\tools\Deploy.ps1                          # -> C:\Modding\MO2\mods\SKSE Power Attack
+.\tools\Deploy.ps1 -Path "D:\mods\My Test"  # any mod folder
+```
+
+`CMakeUserPresets.json` (git-ignored) points `COMMONLIB_PREBUILT_DIR` at the prebuilt CommonLibSSE bundle
+already extracted by the `skyrim-blink` project, so nothing is rebuilt from source. Drop it to let CMake
+download the bundle instead.
 
 ## Logging
 
