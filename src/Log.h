@@ -31,6 +31,21 @@ namespace SPA::Log
 		return std::filesystem::path{ std::wstring_view{ buffer, chars } }.string();
 	}
 
+	inline std::string ExePath()
+	{
+		wchar_t buffer[MAX_PATH * 8]{};
+		const auto chars = ::GetModuleFileNameW(nullptr, buffer, static_cast<DWORD>(std::size(buffer)));
+		if (chars == 0) {
+			return "<unknown>";
+		}
+		return std::filesystem::path{ std::wstring_view{ buffer, chars } }.string();
+	}
+
+	inline std::string ThreadId()
+	{
+		return std::to_string(::GetCurrentThreadId());
+	}
+
 	template <class... Args>
 	void Write(spdlog::level::level_enum a_level, const char* a_file, int a_line, spdlog::format_string_t<Args...> a_fmt, Args&&... a_args)
 	{
@@ -63,6 +78,10 @@ namespace SPA::Log
 		PAI("SKSE Power Attack {} starting", SPA_VERSION);
 		PAI("skyrim runtime : {} {}", runtime, REL::Module::get().version().string("."));
 		PAI("dll            : {}", ModulePath());
+		// The runtime, the exe and the process are the first thing a bug report needs and the
+		// last thing a user thinks to mention, so every log starts with them.
+		PAI("game exe       : {}", ExePath());
+		PAI("process        : pid={} thread={}", ::GetCurrentProcessId(), ThreadId());
 		PAI("======================================================================");
 	}
 

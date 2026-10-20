@@ -10,7 +10,8 @@ namespace SPA::Attack
 	// One click: performs a right-hand power attack on the player.
 	void PowerAttack(const char* a_reason);
 
-	// Forgets per-save state (nothing is queued across a load, a half-finished attack is not
-	// resumed). Called on the loading screen / before a save is loaded.
+	// Forgets per-save state: a delayed power attack still waiting (the jump/block fallback)
+	// is dropped instead of running into the save that is loading. Called before a save loads
+	// and on a new game.
 	void Reset();
 }

@@ -2,6 +2,9 @@
 build/
 out/
 
+# Release/test archives staged by tools/Build-Release.ps1
+packages/
+
 # Local vcpkg checkout
 .vcpkg/
 

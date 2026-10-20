@@ -9,6 +9,12 @@ namespace SPA::Attack
 	{
 		const SKSE::TaskInterface* s_task = nullptr;
 
+		// Bumped whenever a save is loaded or a new game starts. The delayed power attack below
+		// runs on its own thread, so the generation it was scheduled under decides whether it
+		// still belongs to the same game: a save loaded inside the 200 ms wait drops it instead
+		// of acting on a world that is being torn down.
+		std::atomic<std::uint64_t> s_generation{ 0 };
+
 		// Vanilla BGSAction records, looked up by form id: "AttackRight" and
 		// "PowerAttackRight". Actions are what the input handlers themselves submit, so this goes
 		// through the same animation/state machinery as a real button press instead of forcing an
@@ -55,9 +61,14 @@ namespace SPA::Attack
 		// original mod used for jump attacks). The short wait leaves the normal attack's window.
 		void DelayedPowerAttack(RE::Actor* a_actor)
 		{
+			const auto generation = s_generation.load(std::memory_order_acquire);
 			try {
-				std::thread([a_actor]() {
+				std::thread([a_actor, generation]() {
 					std::this_thread::sleep_for(std::chrono::milliseconds(200));
+					if (s_generation.load(std::memory_order_acquire) != generation) {
+						PA("attack: a save was loaded during the 200 ms wait, dropping the delayed power attack");
+						return;
+					}
 					PerformAction(s_rightPowerAttack, a_actor, "click (after the jump/block attack)");
 				}).detach();
 			} catch (const std::exception& e) {
@@ -110,6 +121,7 @@ namespace SPA::Attack
 
 	void Reset()
 	{
-		PA("attack: state reset");
+		const auto generation = s_generation.fetch_add(1, std::memory_order_release) + 1;
+		PA("attack: state reset (generation {}), a delayed power attack still waiting is dropped", generation);
 	}
 }

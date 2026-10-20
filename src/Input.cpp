@@ -188,22 +188,55 @@ namespace SPA
 					return RE::BSEventNotifyControl::kContinue;
 				}
 			};
-		}
 
-		void ResetState()
+		// The game keeps dispatching input while a menu is up, but a modifier held when the menu
+		// opened never gets its release: the menu eats it. Clearing on open means the click after
+		// a menu starts from "nothing held" instead of needing the modifier pressed twice.
+		class MenuSink : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
 		{
-			s_modifierHeld.store(false, std::memory_order_release);
-			PA("input: modifier state cleared");
-		}
-
-		void Register()
-		{
-			if (auto* manager = RE::BSInputDeviceManager::GetSingleton()) {
-				manager->AddEventSink(Sink::GetSingleton());
-				PAI("input: input sink registered (click '{}' to power attack)", Keys::Describe(Config::Cached().hotkey));
-			} else {
-				PAE("input: BSInputDeviceManager singleton is null, the click will not work");
+		public:
+			static MenuSink* GetSingleton()
+			{
+				static MenuSink singleton;
+				return &singleton;
 			}
+
+			RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
+			{
+				if (a_event && a_event->opening) {
+					PA("input: menu '{}' opened, dropping the modifier state", a_event->menuName.c_str());
+					ResetState();
+				}
+				return RE::BSEventNotifyControl::kContinue;
+			}
+		};
+	}
+
+	void ResetState()
+	{
+		s_modifierHeld.store(false, std::memory_order_release);
+		PA("input: modifier state cleared");
+	}
+
+	void Register()
+	{
+		if (auto* manager = RE::BSInputDeviceManager::GetSingleton()) {
+			manager->AddEventSink(Sink::GetSingleton());
+			PAI("input: input sink registered (click '{}' to power attack)", Keys::Describe(Config::Cached().hotkey));
+		} else {
+			PAE("input: BSInputDeviceManager singleton is null, the click will not work");
+		}
+
+		if (auto* ui = RE::UI::GetSingleton()) {
+			if (auto* source = ui->GetEventSource<RE::MenuOpenCloseEvent>()) {
+				source->AddEventSink(MenuSink::GetSingleton());
+				PAI("input: menu sink registered (modifier state is dropped when a menu opens)");
+			} else {
+				PAW("input: no menu event source, a held modifier survives menus");
+			}
+		} else {
+			PAW("input: no UI singleton, a held modifier survives menus");
 		}
 	}
+}
 }

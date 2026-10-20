@@ -15,12 +15,14 @@ asked; "simple" is the point.
 | Path | What it does |
 |---|---|
 | `src/Plugin.cpp` | `SKSEPlugin_Load` + messaging: config load, action init, input/UI registration. |
-| `src/Config.h/.cpp` | `Settings` (4 fields), JSON load/save next to the DLL, validation, revision counter. |
+| `src/Config.h/.cpp` | `Settings` (4 fields), JSON load/save next to the DLL, format version + migrations, validation, revision counter. |
 | `src/Attack.h/.cpp` | Resolves `AttackRight` / `PowerAttackRight`, submits them through the task interface, jump/block fallback. |
-| `src/Input.h/.cpp` | Key encoding (SKSE InputMap numbering), labels, the input sink and its gates. |
-| `src/UI.h/.cpp` | SKSE Menu Framework tab: rebinds, toggles, reset. |
+| `src/Input.h/.cpp` | Key encoding (SKSE InputMap numbering), labels, the input sink, its gates, the menu-open sink. |
+| `src/UI.h/.cpp` | SKSE Menu Framework tab: rebinds, toggles, two-click reset. |
 | `src/Log.h` | `PA`/`PAI`/`PAW`/`PAE`, trace level, flushed per line. |
 | `extern/SKSEMenuFramework.h` | Vendored framework header (do not edit). |
+| `tools/Deploy.ps1` | Manual deploy of the built DLL into one mod folder (refuses while Skyrim runs). |
+| `tools/Build-Release.ps1` | Version-stamped build + `packages/SKSEPowerAttack-<version>.zip` for test installs. |
 
 ## Build
 
@@ -52,5 +54,10 @@ would silently replace a DLL the running game has loaded.
 - The menu edits `Config::Get()` in place and calls `Config::Touch()`; the game thread reads `Config::Cached()`.
   Keep that split if you add settings.
 - `Config::Save()` writes a sibling `.tmp` and moves it over the real file; keep that.
-- Never break a user's existing `SKSEPowerAttack.json`: unknown keys are preserved.
+- **Never break a user's existing `SKSEPowerAttack.json`.** Unknown keys are preserved, a bad value costs only
+  that key, and a rename/type change means bumping `kSettingsFormatVersion` in `Config.cpp` plus exactly one
+  `Migrate` step for the jump — not a new key that silently ignores the old value. Never ship a config file in
+  the archive: the plugin writes one on first run, so an update never overwrites tuned settings.
+- A new setting is read in `ApplyDocument()` (both the real file and the legacy import use it), validated in
+  `Validate()` and shown in `UI.cpp` — a key nobody can reach from the menu is a bug, not a feature.
 - Commit locally when a change builds, single-line imperative messages. Never push without being asked.

@@ -26,6 +26,30 @@ namespace SPA::UI
 		constexpr ImGui::ImVec4 kValueColor{ 0.80f, 0.90f, 1.00f, 1.0f };
 		constexpr ImGui::ImVec4 kWarnColor{ 1.00f, 0.80f, 0.30f, 1.0f };
 
+		// Reset wipes every setting, so the second click has to land inside this window.
+		constexpr float kResetConfirmSeconds = 4.0f;
+
+		std::atomic<std::int64_t> resetArmedTicks{ 0 };
+
+		float SecondsSince(std::int64_t a_ticks)
+		{
+			const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+			return static_cast<float>(now - a_ticks) / static_cast<float>(std::chrono::steady_clock::period::den) *
+				static_cast<float>(std::chrono::steady_clock::period::num);
+		}
+
+		// Pops on the way out, including when an exception unwinds through it: the ImGui style
+		// stack is global state, so a leaked push would tint every later frame.
+		class ScopedTextColor
+		{
+		public:
+			explicit ScopedTextColor(const ImGui::ImVec4& a_color) { ImGui::PushStyleColor(ImGui::ImGuiCol_Text, a_color); }
+			~ScopedTextColor() { ImGui::PopStyleColor(); }
+
+			ScopedTextColor(const ScopedTextColor&) = delete;
+			ScopedTextColor& operator=(const ScopedTextColor&) = delete;
+		};
+
 		void SaveNow(const char* a_reason)
 		{
 			PAI("ui: saving config ({}) values: {}", a_reason, Config::Describe());
@@ -34,9 +58,8 @@ namespace SPA::UI
 
 		void Body(const char* a_text)
 		{
-			ImGui::PushStyleColor(ImGui::ImGuiCol_Text, kValueColor);
+			const ScopedTextColor color{ kValueColor };
 			ImGui::TextWrapped("%s", a_text);
-			ImGui::PopStyleColor();
 		}
 
 		void BeginCapture(Bind a_target)
@@ -63,9 +86,10 @@ namespace SPA::UI
 			ImGui::Text("%s:", a_label);
 			ImGui::SameLine();
 			if (capturing) {
-				ImGui::PushStyleColor(ImGui::ImGuiCol_Text, kWarnColor);
-				ImGui::TextUnformatted("listening... press a key, mouse button or gamepad button");
-				ImGui::PopStyleColor();
+				{
+					const ScopedTextColor warn{ kWarnColor };
+					ImGui::TextUnformatted("listening... press a key, mouse button or gamepad button");
+				}
 				ImGui::SameLine();
 				if (ImGui::Button("Cancel")) {
 					EndCapture();
@@ -73,9 +97,10 @@ namespace SPA::UI
 				return;
 			}
 
-			ImGui::PushStyleColor(ImGui::ImGuiCol_Text, kValueColor);
-			ImGui::Text("%s", Keys::Describe(a_code).c_str());
-			ImGui::PopStyleColor();
+			{
+				const ScopedTextColor value{ kValueColor };
+				ImGui::Text("%s", Keys::Describe(a_code).c_str());
+			}
 			ImGui::SameLine();
 			if (ImGui::Button(std::format("Rebind##{}", static_cast<int>(a_target)).c_str())) {
 				BeginCapture(a_target);
@@ -90,7 +115,47 @@ namespace SPA::UI
 			}
 		}
 
-		void __stdcall Render()
+		// Reset wipes every setting, so it takes two clicks inside the window above; the second
+		// click is the one that resets. Cancel and the expiry both disarm it.
+		void RenderReset()
+		{
+			const auto armed = resetArmedTicks.load(std::memory_order_acquire);
+			const bool confirming = armed != 0 && SecondsSince(armed) < kResetConfirmSeconds;
+
+			if (ImGui::Button(confirming ? "Confirm reset" : "Reset defaults")) {
+				if (confirming) {
+					resetArmedTicks.store(0, std::memory_order_release);
+					PAI("ui: reset to defaults confirmed (was: {})", Config::Describe());
+
+					// The capture is separate state: leaving it armed would swallow the next key
+					// and write it over the defaults that were just restored.
+					EndCapture();
+					Config::ResetToDefaults();
+					Log::SetEnabled(Config::Get().logging);
+					SaveNow("reset defaults");
+				} else {
+					resetArmedTicks.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_release);
+					PAI("ui: reset armed, click again within {:.0f}s to confirm", kResetConfirmSeconds);
+				}
+			}
+
+			// Right after the button, before Cancel becomes "the last item".
+			if (ImGui::IsItemHovered()) {
+				ImGui::SetTooltip("Mouse 5, no modifier, power attacks at 0 stamina, logging on.");
+			}
+
+			// Re-read: a confirmed reset above just cleared it, so Cancel must not linger.
+			const auto stillArmed = resetArmedTicks.load(std::memory_order_acquire);
+			if (stillArmed != 0 && SecondsSince(stillArmed) < kResetConfirmSeconds) {
+				ImGui::SameLine();
+				if (ImGui::Button("Cancel##reset")) {
+					resetArmedTicks.store(0, std::memory_order_release);
+					PA("ui: reset cancelled");
+				}
+			}
+		}
+
+		void RenderTab()
 		{
 			const int frame = renderFrames.fetch_add(1) + 1;
 			if (frame <= 5) {
@@ -122,20 +187,28 @@ namespace SPA::UI
 			}
 
 			ImGui::SeparatorText("Reset");
-			if (ImGui::Button("Reset defaults (mouse 5, no modifier)")) {
-				PAI("ui: reset to defaults (was: {})", Config::Describe());
-				EndCapture();
-				Config::ResetToDefaults();
-				Log::SetEnabled(Config::Get().logging);
-				SaveNow("reset defaults");
-			}
+			RenderReset();
 
 			ImGui::Spacing();
 			Body("Every change saves itself to SKSE/Plugins/SKSEPowerAttack.json.");
 		}
 
+		// The framework calls this from the game's draw loop, so nothing may escape: an
+		// exception is logged and the next frame tries again (the colour scopes above keep the
+		// ImGui style stack balanced while it unwinds).
+		void __stdcall Render()
+		{
+			try {
+				RenderTab();
+			} catch (const std::exception& e) {
+				PAE("ui: Render threw: {}", e.what());
+			} catch (...) {
+				PAE("ui: Render threw a non-std exception");
+			}
+		}
+
 		// While capturing, listen to raw input through the framework's input hook.
-		bool __stdcall InputListener(RE::InputEvent* a_event)
+		bool CaptureKey(RE::InputEvent* a_event)
 		{
 			const auto target = s_capture.load();
 			if (target == Bind::kNone || !a_event) {
@@ -174,6 +247,20 @@ namespace SPA::UI
 				EndCapture();
 				SaveNow("key rebound");
 				return true;  // swallow the press so it does not also reach the game
+			}
+			return false;
+		}
+
+		// The framework's input hook: an exception must not escape into it, and a press that
+		// could not be handled is simply not swallowed.
+		bool __stdcall InputListener(RE::InputEvent* a_event)
+		{
+			try {
+				return CaptureKey(a_event);
+			} catch (const std::exception& e) {
+				PAE("ui: key capture threw: {}, ignoring this press", e.what());
+			} catch (...) {
+				PAE("ui: key capture threw a non-std exception, ignoring this press");
 			}
 			return false;
 		}
