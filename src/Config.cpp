@@ -2,7 +2,7 @@
 #include "Config.h"
 #include "Log.h"
 
-namespace OCPA
+namespace SPA
 {
 	namespace
 	{
@@ -21,7 +21,7 @@ namespace OCPA
 			wchar_t buffer[MAX_PATH * 8]{};
 			const auto chars = ::GetModuleFileNameW(module, buffer, static_cast<DWORD>(std::size(buffer)));
 			std::filesystem::path path{ std::wstring_view{ buffer, static_cast<std::size_t>(chars) } };
-			path = path.parent_path() / L"OneClickPowerAttack.json";
+			path = path.parent_path() / L"SKSEPowerAttack.json";
 			PA("config: path = {}", path.string());
 			return path;
 		}

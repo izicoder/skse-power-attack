@@ -2,9 +2,9 @@
 
 #include "PCH.h"
 
-namespace OCPA::UI
+namespace SPA::UI
 {
 	// Adds the settings tab to SKSE Menu Framework when it is installed. Optional: without the
-	// framework the plugin still works from OneClickPowerAttack.json.
+	// framework the plugin still works from SKSEPowerAttack.json.
 	void Register();
 }

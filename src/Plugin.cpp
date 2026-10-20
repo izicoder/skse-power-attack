@@ -19,26 +19,26 @@ namespace
 			case SKSE::MessagingInterface::kDataLoaded:
 				{
 					PAI("msg: kDataLoaded - bringing the plugin online");
-					OCPA::Config::Load();
-					OCPA::Attack::Init(SKSE::GetTaskInterface());
-					OCPA::Input::Register();
-					OCPA::UI::Register();
-					PAI("msg: One Click Power Attack v{} is live", OCPA_VERSION);
+					SPA::Config::Load();
+					SPA::Attack::Init(SKSE::GetTaskInterface());
+					SPA::Input::Register();
+					SPA::UI::Register();
+					PAI("msg: SKSE Power Attack v{} is live", SPA_VERSION);
 				}
 				break;
 			case SKSE::MessagingInterface::kPreLoadGame:
 				PAI("msg: kPreLoadGame - a save is about to load");
-				OCPA::Input::ResetState();
-				OCPA::Attack::Reset();
+				SPA::Input::ResetState();
+				SPA::Attack::Reset();
 				break;
 			case SKSE::MessagingInterface::kPostLoadGame:
 				PA("msg: kPostLoadGame");
-				OCPA::Input::ResetState();
+				SPA::Input::ResetState();
 				break;
 			case SKSE::MessagingInterface::kNewGame:
 				PA("msg: kNewGame");
-				OCPA::Input::ResetState();
-				OCPA::Attack::Reset();
+				SPA::Input::ResetState();
+				SPA::Attack::Reset();
 				break;
 			default:
 				PA("msg: type {}", a_message->type);
@@ -59,7 +59,7 @@ extern "C" DLLEXPORT bool SKSEPlugin_Load(const SKSE::LoadInterface* a_skse)
 	}
 
 	SKSE::Init(a_skse);
-	OCPA::Log::Init();
+	SPA::Log::Init();
 
 	const auto messaging = SKSE::GetMessagingInterface();
 	if (!messaging) {

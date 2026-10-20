@@ -1,5 +1,5 @@
 {
-  "name": "one-click-power-attack",
+  "name": "skse-power-attack",
   "version-string": "1.0.0",
   "dependencies": [
     "spdlog",

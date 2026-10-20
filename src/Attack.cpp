@@ -3,7 +3,7 @@
 #include "Config.h"
 #include "Log.h"
 
-namespace OCPA::Attack
+namespace SPA::Attack
 {
 	namespace
 	{

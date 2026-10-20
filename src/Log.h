@@ -4,16 +4,16 @@
 #include "Version.h"
 
 // trace: the workhorse - one of these on every single step
-#define PA(...)  ::OCPA::Log::Write(spdlog::level::trace, __FILE__, __LINE__, __VA_ARGS__)
+#define PA(...)  ::SPA::Log::Write(spdlog::level::trace, __FILE__, __LINE__, __VA_ARGS__)
 // info: milestones that must stay visible
-#define PAI(...) ::OCPA::Log::Write(spdlog::level::info, __FILE__, __LINE__, __VA_ARGS__)
-#define PAW(...) ::OCPA::Log::Write(spdlog::level::warn, __FILE__, __LINE__, __VA_ARGS__)
-#define PAE(...) ::OCPA::Log::Write(spdlog::level::err, __FILE__, __LINE__, __VA_ARGS__)
+#define PAI(...) ::SPA::Log::Write(spdlog::level::info, __FILE__, __LINE__, __VA_ARGS__)
+#define PAW(...) ::SPA::Log::Write(spdlog::level::warn, __FILE__, __LINE__, __VA_ARGS__)
+#define PAE(...) ::SPA::Log::Write(spdlog::level::err, __FILE__, __LINE__, __VA_ARGS__)
 
 // Every line goes through here so that the level is forced to trace, the file is flushed after
 // every line (the log then ends with the last thing that ran), and a bad format string can never
 // take the game down.
-namespace OCPA::Log
+namespace SPA::Log
 {
 	inline std::string ModulePath()
 	{
@@ -60,7 +60,7 @@ namespace OCPA::Log
 
 		const char* runtime = REL::Module::IsVR() ? "VR" : (REL::Module::IsAE() ? "AE" : "SE");
 		PAI("======================================================================");
-		PAI("One Click Power Attack {} starting", OCPA_VERSION);
+		PAI("SKSE Power Attack {} starting", SPA_VERSION);
 		PAI("skyrim runtime : {} {}", runtime, REL::Module::get().version().string("."));
 		PAI("dll            : {}", ModulePath());
 		PAI("======================================================================");

@@ -4,7 +4,7 @@
 #include "Config.h"
 #include "Log.h"
 
-namespace OCPA
+namespace SPA
 {
 	namespace Keys
 	{

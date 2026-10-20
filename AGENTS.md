@@ -2,11 +2,11 @@
 
 ## What this is
 
-**One Click Power Attack (SKSE)** — a minimal SKSE plugin (C++23, CommonLibSSE-NG, Address Library) that turns a
-click of one key into a vanilla right-hand power attack. One DLL: no plugin file, no Papyrus, no MCM. Optional
-settings tab through SKSE Menu Framework.
+**SKSE Power Attack** — a minimal SKSE plugin (C++23, CommonLibSSE-NG, Address Library) that turns a click of
+one key into a vanilla right-hand power attack. One DLL: no plugin file, no Papyrus, no MCM. Optional settings
+tab through SKSE Menu Framework.
 
-It is a rewrite of jarari's One Click Power Attack, deliberately reduced to the single-click behaviour. Do not
+A rewrite of jarari's One Click Power Attack, deliberately reduced to the single-click behaviour. Do not
 re-add the original's extras (dual attack, MCO window notify/queue, long-press modes, block unbinding) unless
 asked; "simple" is the point.
 
@@ -38,15 +38,19 @@ bundle is reused via `COMMONLIB_PREBUILT_DIR` in the local preset. Do not switch
 `find_package` needs them.
 
 There are no automated tests. Verifying a change means building, enabling the mod, launching Skyrim and reading
-`…\Documents\My Games\Skyrim Special Edition\SKSE\OneClickPowerAttack.log`.
+`…\Documents\My Games\Skyrim Special Edition\SKSE\SKSEPowerAttack.log`.
+
+Never build with `MOD_OUTPUT_FOLDER` pointing at an enabled MO2 mod while the game is running: the post-build
+copy replaces a DLL the running process has loaded. Configure with `-DMOD_OUTPUT_FOLDER=` for a local-only
+build.
 
 ## Conventions
 
-- Tabs, Allman braces, `namespace OCPA`.
+- Tabs, Allman braces, `namespace SPA`.
 - Heavily commented where the *why* is not obvious (engine calls, magic form ids, thread boundaries).
 - Never let an exception cross an engine boundary: catch at the sink/hook/entry points and log.
 - The menu edits `Config::Get()` in place and calls `Config::Touch()`; the game thread reads `Config::Cached()`.
   Keep that split if you add settings.
 - `Config::Save()` writes a sibling `.tmp` and moves it over the real file; keep that.
-- Never break a user's existing `OneClickPowerAttack.json`: unknown keys are preserved.
+- Never break a user's existing `SKSEPowerAttack.json`: unknown keys are preserved.
 - Commit locally when a change builds, single-line imperative messages. Never push without being asked.

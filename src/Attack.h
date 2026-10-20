@@ -2,7 +2,7 @@
 
 #include "PCH.h"
 
-namespace OCPA::Attack
+namespace SPA::Attack
 {
 	// Resolves the vanilla action records and keeps the task interface. Call once at kDataLoaded.
 	void Init(const SKSE::TaskInterface* a_task);

@@ -2,7 +2,7 @@
 
 #include "PCH.h"
 
-namespace OCPA
+namespace SPA
 {
 	// Key codes use SKSE's InputMap numbering:
 	//   0..255    keyboard scancode
@@ -18,7 +18,7 @@ namespace OCPA
 		int  hotkey{ 257 };            // click this to power attack (257 = right mouse)
 		int  modifierKey{ kNoKey };    // optional: hotkey only counts while this is held
 		bool allowZeroStamina{ true };  // power attack with an empty stamina bar (0 stamina mods)
-		bool logging{ true };          // write OneClickPowerAttack.log
+		bool logging{ true };          // write SKSEPowerAttack.log
 	};
 
 	class Config

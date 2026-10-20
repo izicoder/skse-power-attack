@@ -1,11 +1,11 @@
-# One Click Power Attack (SKSE)
+# SKSE Power Attack
 
 Click the right mouse button once and you power attack. **One DLL, nothing else** — no `.esp`, no `.esl`,
 no Papyrus, no MCM quest: a pure SKSE plugin that submits the vanilla `PowerAttackRight` action when you
 click.
 
-This is a rewrite of [One Click Power Attack](https://www.nexusmods.com/skyrimspecialedition/mods/60878) by
-jarari, reduced to the one thing its name promises.
+Inspired by [One Click Power Attack](https://www.nexusmods.com/skyrimspecialedition/mods/60878) by jarari,
+reduced to the one thing that mod's name promises.
 
 ## What it does
 
@@ -23,7 +23,7 @@ jarari, reduced to the one thing its name promises.
 
 ## Settings
 
-`SKSE/Plugins/OneClickPowerAttack.json`, next to the DLL (inside the mod folder under MO2), written with
+`SKSE/Plugins/SKSEPowerAttack.json`, next to the DLL (inside the mod folder under MO2), written with
 defaults on first run:
 
 | Key | Default | Meaning |
@@ -31,7 +31,7 @@ defaults on first run:
 | `hotkey` | `257` | key that triggers the power attack |
 | `modifierKey` | `-1` | optional modifier; `-1` = none |
 | `allowZeroStamina` | `true` | allow the click with an empty stamina bar |
-| `logging` | `true` | write `OneClickPowerAttack.log` |
+| `logging` | `true` | write `SKSEPowerAttack.log` |
 
 Key codes use SKSE's `InputMap` numbering (the same values the original mod's `settings.ini` used):
 
@@ -50,9 +50,9 @@ Built against CommonLibSSE-NG v13.0.0 (Address Library) and developed/tested on 
 
 ## Install
 
-Put `OneClickPowerAttack.dll` in `…/mods/<your mod>/SKSE/Plugins/` and enable the mod. **Disable the original
-One Click Power Attack mod** when enabling this one — both plugins listen to the same click and would submit
-the power attack twice.
+Put `SKSEPowerAttack.dll` in `…/mods/<your mod>/SKSE/Plugins/` and enable the mod. **Disable any other
+one-click power attack plugin** (e.g. One Click Power Attack NG) when enabling this one — both listen to the
+same click and would submit the power attack twice.
 
 ## Building
 
@@ -71,8 +71,8 @@ so nothing is rebuilt from source. Drop the latter to let CMake download the bun
 
 ## Logging
 
-`…\Documents\My Games\Skyrim Special Edition\SKSE\OneClickPowerAttack.log`, trace level, flushed every line.
-Untick **Write OneClickPowerAttack.log** to silence it.
+`…\Documents\My Games\Skyrim Special Edition\SKSE\SKSEPowerAttack.log`, trace level, flushed every line.
+Untick **Write SKSEPowerAttack.log** to silence it.
 
 ## Credits
 

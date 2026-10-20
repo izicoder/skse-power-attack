@@ -9,7 +9,7 @@
 // alias it so call sites read like normal ImGui code.
 namespace ImGui = ImGuiMCP;
 
-namespace OCPA::UI
+namespace SPA::UI
 {
 	namespace
 	{
@@ -114,7 +114,7 @@ namespace OCPA::UI
 			}
 
 			ImGui::SeparatorText("Diagnostics");
-			if (ImGui::Checkbox("Write OneClickPowerAttack.log", &settings.logging)) {
+			if (ImGui::Checkbox("Write SKSEPowerAttack.log", &settings.logging)) {
 				PA("ui: logging -> {}", settings.logging);
 				Log::SetEnabled(settings.logging);
 				Config::Touch();
@@ -131,7 +131,7 @@ namespace OCPA::UI
 			}
 
 			ImGui::Spacing();
-			Body("Every change saves itself to SKSE/Plugins/OneClickPowerAttack.json.");
+			Body("Every change saves itself to SKSE/Plugins/SKSEPowerAttack.json.");
 		}
 
 		// While capturing, listen to raw input through the framework's input hook.
@@ -188,7 +188,7 @@ namespace OCPA::UI
 			return;
 		}
 
-		SKSEMenuFramework::SetSection("One Click Power Attack");
+		SKSEMenuFramework::SetSection("SKSE Power Attack");
 		SKSEMenuFramework::AddSectionItem("Settings", Render);
 		inputEvent = std::make_unique<SKSEMenuFramework::Model::InputEvent>(&InputListener);
 		PAI("ui: menu registered (settings tab + key capture)");

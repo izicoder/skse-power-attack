@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.21)
 
 # Baked into Version.h and the SKSE plugin record. A cache variable so a release build can be
-# stamped with -DOCPA_VERSION=x.y.z without editing this file.
-set(OCPA_VERSION "1.0.0" CACHE STRING "Version baked into the plugin binary")
+# stamped with -DSPA_VERSION=x.y.z without editing this file.
+set(SPA_VERSION "1.0.0" CACHE STRING "Version baked into the plugin binary")
 
-project(OneClickPowerAttack VERSION ${OCPA_VERSION} LANGUAGES CXX)
+project(SKSEPowerAttack VERSION ${SPA_VERSION} LANGUAGES CXX)
 
 configure_file(
 	"${CMAKE_CURRENT_SOURCE_DIR}/src/Version.h.in"
@@ -60,8 +60,8 @@ set(SOURCES
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${SOURCES})
 
 add_commonlibsse_plugin(${PROJECT_NAME}
-	NAME "OneClickPowerAttack"
-	AUTHOR "OneClickPowerAttack"
+	NAME "SKSEPowerAttack"
+	AUTHOR "SKSEPowerAttack"
 	VERSION "${PROJECT_VERSION}"
 	USE_ADDRESS_LIBRARY
 	SOURCES ${SOURCES}
