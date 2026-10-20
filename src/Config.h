@@ -8,8 +8,7 @@ namespace SPA
 	//   0..255    keyboard scancode
 	//   256..263  mouse button (256 = left, 257 = right, 258 = middle, ...)
 	//   266..281  gamepad button (dpad, start/back, sticks, shoulders, A/B/X/Y, LT/RT)
-	// which is the same numbering the original mod's settings.ini used, so a hand-copied value
-	// still means the same key.
+	// which is SKSE's own numbering, so a hand-copied value still means the same key.
 	constexpr int kNoKey = -1;
 	constexpr int kMaxKeyCode = 281;
 

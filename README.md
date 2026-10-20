@@ -4,9 +4,6 @@ Click mouse button 5 (or any key you bind) once and you power attack. **One DLL,
 no `.esl`, no Papyrus, no MCM quest: a pure SKSE plugin that submits the vanilla `PowerAttackRight` action
 when you click.
 
-Inspired by [One Click Power Attack](https://www.nexusmods.com/skyrimspecialedition/mods/60878) by jarari,
-reduced to the one thing that mod's name promises.
-
 > **AI-generated.** Every line of this plugin was written by an AI. No human authored or thoroughly reviewed
 > it, so treat it as a hobby project: expect rough edges, and check it yourself before trusting it in your
 > load order.
@@ -47,7 +44,7 @@ update never overwrites a tuned file.
 Upgrading from this plugin's pre-rename build? Its `OneClickPowerAttack.json` sits next to the DLL and is
 imported once on first run, then left untouched.
 
-Key codes use SKSE's `InputMap` numbering (the same values the original mod's `settings.ini` used):
+Key codes use SKSE's `InputMap` numbering:
 
 - `0`–`255` — keyboard scancode (e.g. `42` = left shift, `29` = left ctrl)
 - `256`–`263` — mouse button (`256` left, `257` right, `258` middle, …)
@@ -116,5 +113,4 @@ Untick **Write SKSEPowerAttack.log** to silence it.
 
 ## Credits
 
-- jarari for the original One Click Power Attack (the action handling and its caveats come from it).
 - Ryan-rsm-McKenzie / CharmedBaryon for CommonLibSSE / CommonLibSSE-NG, meh321 for the Address Library.

@@ -6,9 +6,8 @@
 one key into a vanilla right-hand power attack. One DLL: no plugin file, no Papyrus, no MCM. Optional settings
 tab through SKSE Menu Framework.
 
-A rewrite of jarari's One Click Power Attack, deliberately reduced to the single-click behaviour. Do not
-re-add the original's extras (dual attack, MCO window notify/queue, long-press modes, block unbinding) unless
-asked; "simple" is the point.
+A minimal plugin by design: one click, one power attack. Do not add extras (dual attack, attack-window
+notify/queue, long-press modes, block unbinding) unless asked; "simple" is the point.
 
 ## Layout
 

@@ -57,8 +57,8 @@ namespace SPA::Attack
 		}
 
 		// Jumping and blocking both eat the power attack action, so those two cases get the
-		// vanilla right attack first and the power attack a moment later (the same fallback the
-		// original mod used for jump attacks). The short wait leaves the normal attack's window.
+		// vanilla right attack first and the power attack a moment later. The short wait leaves
+		// the normal attack's window before the power attack lands.
 		void DelayedPowerAttack(RE::Actor* a_actor)
 		{
 			const auto generation = s_generation.load(std::memory_order_acquire);
