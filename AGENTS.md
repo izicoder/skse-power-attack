@@ -124,7 +124,9 @@ normal swing) and hold it (one normal swing on release).
   asked for: Shift + right mouse must not block, Shift + E must not loot) and for the game's attack key even on a
   bare chord (`Input::IsGameAttackKey`, the control map's `"Attack"` event id), which is what stops a tap from
   swinging twice. A gate at press leaves the press with the game. If a taken press turns out to be a hold or hits a
-  gate at release, `Attack::NormalAttack` hands the swing back.
+  gate at release, `Attack::NormalAttack` hands the swing back. Only the press is ever taken: the release always
+  reaches the game, because the engine latches block on its own held-button state and a swallowed release left the
+  shield up until the next key press.
 - The tests in `tests/` cover exactly those three pure headers (`Chord`, `Binds`, `Selection`) and are the
   reason they are engine-free: `cmake --build build/vs2022 --target spa_ChordTests spa_BindsTests
   spa_SelectionTests`, or `ctest --test-dir build/vs2022 --output-on-failure`.

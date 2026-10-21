@@ -95,9 +95,9 @@ namespace SPA::UI
 				{
 					const ScopedTextColor warn{ kWarnColor };
 					if (mods == Chord::kNone) {
-						ImGui::TextUnformatted("listening... press a key (hold Shift, Ctrl or Alt first), Esc cancels");
+						ImGui::TextUnformatted("waiting for a key... tap it now, Esc cancels");
 					} else {
-						ImGui::TextUnformatted(std::format("listening for {}a key, Esc cancels", Chord::ModsPrefix(mods)).c_str());
+						ImGui::TextUnformatted(std::format("waiting for a key with {}held... tap it now, Esc cancels", Chord::ModsPrefix(mods)).c_str());
 					}
 				}
 				ImGui::SameLine();
@@ -155,7 +155,7 @@ namespace SPA::UI
 
 			// Right after the button, before Cancel becomes "the last item".
 			if (ImGui::IsItemHovered()) {
-				ImGui::SetTooltip("Shift + left mouse on the right hand, Shift + right mouse on the left hand, mouse 5 on dual wield, fallback off, power attacks at 0 stamina, logging on.");
+				ImGui::SetTooltip("Starting keys: Shift + left mouse for the right hand, Shift + right mouse for the left hand, mouse 5 for dual wield. Both weapons option off, tap window 200 ms, empty stamina allowed, logging on.");
 			}
 
 			// Re-read: a confirmed reset above just cleared it, so Cancel must not linger.
@@ -180,31 +180,31 @@ namespace SPA::UI
 
 			ImGui::SeparatorText("Power attack keys");
 			RenderBind("Right hand", settings.binds[Binds::Index(Binds::Slot::kRight)], Binds::Slot::kRight,
-				"Swings the vanilla right-hand power attack.");
+				"Tap it: power attack with your right hand.");
 			RenderBind("Left hand", settings.binds[Binds::Index(Binds::Slot::kLeft)], Binds::Slot::kLeft,
-				"Swings the vanilla left-hand power attack.");
+				"Tap it: power attack with your left hand.");
 			RenderBind("Dual wield", settings.binds[Binds::Index(Binds::Slot::kDual)], Binds::Slot::kDual,
-				"Swings the vanilla two-weapon power attack. It needs a one-handed weapon in each hand to land.");
+				"Tap it: power attack with both one-handed weapons at once.");
 
 			ImGui::Spacing();
-			if (ImGui::Checkbox("Left and right keys also do the dual-wield attack", &settings.dualFallback)) {
+			if (ImGui::Checkbox("Left and right keys also use both weapons", &settings.dualFallback)) {
 				PA("ui: dualFallback -> {}", settings.dualFallback);
 				Config::Touch();
 				SaveNow("dual-wield fallback changed");
 			}
 			ImGui::Indent();
-			Body("Only while Dual wield has no key. With a one-handed weapon in each hand, the left and right keys then swing the two-weapon power attack instead of their own hand.");
-			Body("Put a key on Dual wield, or untick this, and every key swings exactly its own hand.");
+			Body("Fighting with two one-handed weapons and want one key for all of it? Tick this: the left and right keys then swing both weapons.");
+			Body("It only works while Dual wield has no key. Put a key on Dual wield, or untick this box, and each key goes back to its own hand.");
 			ImGui::Unindent();
 
 			ImGui::Spacing();
-			Body("Tap a key: press it, let go within the tap window below, and the power attack fires. Hold it longer and nothing happens.");
-			Body("Hold Shift, Ctrl or Alt first, then press the key, and both are stored in that row (e.g. Shift + Mouse 5).");
-			Body("Two rows on the same key: the row higher in this list wins.");
-			Body("Bound the game's own attack button (left mouse by default)? The plugin takes that press: a tap is only the power attack, and a long press still gives the normal swing.");
+			Body("A quick tap power attacks. Hold the key down instead and you just swing normally.");
+			Body("Want another key? Click Rebind, then tap the key you want. Hold Shift, Ctrl or Alt while you tap and it becomes part of the key.");
+			Body("Same key on two rows? The row higher up wins.");
+			Body("You can even use the game's own attack button. A quick tap is then only the power attack, no normal swing.");
 			ImGui::Spacing();
-			Body("Jumping or blocking: the game throws a power attack away there, so the plugin swings normally first and power attacks 200 ms later.");
-			Body("Never a power attack, and the press stays with the game: bow, crossbow or staff in hand, on a horse, in a killmove, sitting, dialogue, paused.");
+			Body("Jumping or blocking when you tap? The game throws the power attack away, so the plugin swings normally first and power attacks a moment later.");
+			Body("Nothing happens at all with a bow, crossbow or staff out, on a horse, mid killmove, sitting, in dialogue, or with the game paused. The key keeps its normal job there.");
 
 			ImGui::Spacing();
 			ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10.0f);
@@ -218,8 +218,10 @@ namespace SPA::UI
 				PAI("ui: tapWindowMs -> {}", settings.tapWindowMs);
 				SaveNow("tap window changed");
 			}
+			ImGui::SameLine();
+			Body("how long you may keep the key down and still count as a tap");
 			if (ImGui::IsItemHovered()) {
-				ImGui::SetTooltip("Press and release inside this many ms to power attack. Holding the key does nothing.");
+				ImGui::SetTooltip("Let go faster than this and it is a tap. Keep it down longer and it counts as holding, so you just swing.");
 			}
 
 			ImGui::Spacing();
@@ -229,7 +231,7 @@ namespace SPA::UI
 				SaveNow("allowZeroStamina changed");
 			}
 			if (ImGui::IsItemHovered()) {
-				ImGui::SetTooltip("Leave on if another mod lets you power attack at 0 stamina.");
+				ImGui::SetTooltip("Leave this ticked if another mod lets you power attack with no stamina. Untick it and an empty bar means no power attack, just a normal swing.");
 			}
 
 			ImGui::SeparatorText("Diagnostics");
@@ -244,7 +246,7 @@ namespace SPA::UI
 			RenderReset();
 
 			ImGui::Spacing();
-			Body("Every change saves itself to SKSE/Plugins/SKSEPowerAttack.json.");
+			Body("Every change saves itself straight away. There is no Apply button.");
 		}
 
 		// The framework calls this from the game's draw loop, so nothing may escape: an

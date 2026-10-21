@@ -8,36 +8,31 @@ no MCM quest: a pure SKSE plugin that submits the vanilla power attack action of
 > it, so treat it as a hobby project: expect rough edges, and check it yourself before trusting it in your
 > load order.
 
-## The rules
+## How it works
 
-1. **Three keys, three attacks.** Right hand, left hand, dual wield. A key fires the row it is bound to. Nothing is
-   detected from your gear, with one optional exception: the next rule.
-2. **Dual-wield fallback (off by default).** Turn it on and, while the Dual wield row has *no key*, holding a
-   one-handed weapon in each hand makes the left and right keys swing the two-weapon attack instead of their own
-   hand. Two separate guards turn it off again: put any key on Dual wield, or untick the checkbox. Fists and
-   two-handed weapons do not count as dual wielding, so it never fires with an empty or two-handed hand.
-3. **Tap, not hold.** The attack fires when the key is *released*, and only if the press was shorter than the tap
-   window (200 ms by default). Holding a key you bound does nothing, which is why it is safe next to sprint or
-   jump.
-4. **Modifiers.** Hold Shift, Ctrl or Alt (either side of the keyboard) *first*, then press the key: both are
-   stored in that row, e.g. `Shift + Mouse 5`. Extra modifiers you did not name are ignored, so sprinting with Alt
-   held never blocks a plain `Mouse 5`.
-5. **Two rows, one chord.** A chord that names modifiers beats a bare chord on the same key, and two rows with
-   the exact same chord resolve to the one higher in the menu. Nothing is stolen when you rebind.
-6. **Your chords own their press.** A chord that names Shift, Ctrl or Alt takes that press from the game: vanilla
-   ignores modifiers, so its action is not what you asked for. Shift + right mouse does not block, Shift + E does
-   not loot, Shift + Space does not jump. Hold the key past the tap window and the press is handed back as that
-   row's normal attack.
-7. **Bare keys stay the game's, with one exception.** A key you bind without a modifier keeps its vanilla job, so
-   mouse 4/5 and unused letters are untouched. The exception is the key the game attacks with (left mouse by
-   default): that press is always taken, so a tap gives only the power attack, and a hold hands back a normal swing.
-8. **Jumping or blocking.** The engine eats the power attack action in those two states, so the plugin performs
-   the normal attack of the same row first and the power attack 200 ms later.
-9. **Never a power attack:** bows, crossbows and staves equipped; on a horse; in a killmove; sitting or
-   sleeping; paused game; dialogue. The press is not taken in those cases either, so the bow still fires.
-10. **Empty stamina** is allowed by default (for mods that let you power attack at 0 stamina); one checkbox turns
-    that off.
-11. **No key in a row = that row does nothing.** Every row can be cleared, including the right hand.
+1. **Three keys, three attacks.** One for the right hand, one for the left, one for both weapons. The key you press
+   picks the attack, and your gear plays no part in it (except the option in rule 2).
+2. **One key for both weapons (off by default).** Two one-handed weapons and annoyed by two keys? Tick it. While
+   Dual wield has no key, the left and right keys swing both weapons. Put a key on Dual wield, or untick the box,
+   and each key goes back to its own hand. Fists and two-handed weapons are one weapon, so it never fires with them.
+3. **Tap, don't hold.** The attack fires when you let go, and only if the press was quick (200 ms by default). Hold
+   the key and nothing happens, which is what makes it safe to sit next to sprint or jump.
+4. **Shift, Ctrl, Alt.** Hold the modifier first, then the key. Both are stored in that row, e.g. `Shift + Mouse 5`.
+   Extra modifiers do not matter: sprinting with Alt held never breaks a plain `Mouse 5`.
+5. **The same chord on two rows.** The one with modifiers wins, and if both are identical the row higher in the list
+   wins. Rebinding never fights you.
+6. **A key with a modifier belongs to the plugin.** The game knows nothing about modifiers, so Shift + right mouse
+   does not block, Shift + E does not loot, Shift + Space does not jump. Keep it held past the tap window and you get
+   that row's normal swing when you let go.
+7. **A key without a modifier keeps its day job.** Mouse 4/5 and unused letters are untouched. One exception: the
+   game's attack button (left mouse by default) is taken over, so a tap power attacks without a normal swing first.
+   Hold that one and you get the normal swing.
+8. **Jumping or blocking?** The game drops a power attack there, so you swing normally first and the power attack
+   comes 200 ms later.
+9. **Nothing happens at all** with a bow, crossbow or staff out, on a horse, mid killmove, sitting, in dialogue, or
+   with the game paused. The key keeps its normal job there, so a drawn bow still fires.
+10. **Empty stamina** still power attacks by default, for mods that allow it at 0 stamina. One checkbox turns that off.
+11. **No key, no attack.** Every row can be cleared, the right hand too.
 
 ## Features
 

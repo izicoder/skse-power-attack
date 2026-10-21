@@ -289,9 +289,11 @@ namespace SPA
 
 							auto&      tap = s_taps[Binds::Index(*slot)];
 							const auto pressed = tap.pressTicks.exchange(0, std::memory_order_acq_rel);
+							// The press was taken, the release never is. Block is a held button:
+							// the engine keeps its own "held" flag and only a release clears it, so
+							// swallowing the release left a shield up until the next key press.
 							const bool took = tap.taken.exchange(false, std::memory_order_acq_rel);
 							tap.code.store(Chord::kNoKey, std::memory_order_release);
-							taken |= took;
 
 							const auto& bind = settings.binds[Binds::Index(*slot)];
 
@@ -342,9 +344,11 @@ namespace SPA
 					}
 
 					// kStop is how a matched chord keeps its press away from the game: without it a
-					// modified click blocks, or a bound attack key swings twice. Whether the game honours
-					// it inside its own input handling is unverified - look for ", the game does not get
-					// this press" on the down line when a tap still does the vanilla thing too.
+					// modified click blocks, or a bound attack key swings twice. Only presses are
+					// ever taken - releases must reach the game, or a held button state (block)
+					// stays latched. Whether the engine honours kStop for its own handling is
+					// unverified - look for ", the game does not get this press" on the down line
+					// when a tap still does the vanilla thing too.
 					return taken ? RE::BSEventNotifyControl::kStop : RE::BSEventNotifyControl::kContinue;
 				}
 			};
