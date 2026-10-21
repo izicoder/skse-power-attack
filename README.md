@@ -1,8 +1,8 @@
 # SKSE Power Attack
 
-Tap mouse button 5 (or any key or chord you bind) and you power attack. **One DLL, nothing else** — no `.esp`,
-no `.esl`, no Papyrus, no MCM quest: a pure SKSE plugin that submits the vanilla power attack action of the row
-you bound.
+Tap **mouse button 5** for the two-weapon power attack, **Shift + left mouse** for the right hand, **Shift + right
+mouse** for the left hand, and rebind any of them. **One DLL, nothing else** — no `.esp`, no `.esl`, no Papyrus,
+no MCM quest: a pure SKSE plugin that submits the vanilla power attack action of the row you bound.
 
 > **AI-generated.** Every line of this plugin was written by an AI. No human authored or thoroughly reviewed
 > it, so treat it as a hobby project: expect rough edges, and check it yourself before trusting it in your
@@ -12,10 +12,10 @@ you bound.
 
 1. **Three keys, three attacks.** Right hand, left hand, dual wield. A key fires the row it is bound to. Nothing is
    detected from your gear, with one optional exception: the next rule.
-2. **Dual-wield fallback (on by default).** While the Dual wield row has *no key*, holding a one-handed weapon in
-   each hand makes the left and right keys swing the two-weapon attack instead of their own hand. Two separate
-   guards turn it off: put any key on Dual wield, or untick the checkbox in the menu. Fists and two-handed weapons
-   do not count as dual wielding, so this never fires with an empty or two-handed hand.
+2. **Dual-wield fallback (off by default).** Turn it on and, while the Dual wield row has *no key*, holding a
+   one-handed weapon in each hand makes the left and right keys swing the two-weapon attack instead of their own
+   hand. Two separate guards turn it off again: put any key on Dual wield, or untick the checkbox. Fists and
+   two-handed weapons do not count as dual wielding, so it never fires with an empty or two-handed hand.
 3. **Tap, not hold.** The attack fires when the key is *released*, and only if the press was shorter than the tap
    window (200 ms by default). Holding a key you bound does nothing, which is why it is safe next to sprint or
    jump.
@@ -42,8 +42,8 @@ you bound.
 
 - Chords: hold Shift, Ctrl or Alt while pressing a key to bind `Shift + Mouse 5`, `Ctrl + E`, whatever.
 - Three power attack rows: right hand, left hand, dual wield. Bind one, or all three.
-- Optional dual-wield fallback: one key for everything while both hands hold a one-handed weapon, back off the
-  moment you bind a key on Dual wield or untick the box.
+- Optional dual-wield fallback: one key for everything while both hands hold a one-handed weapon, off until you
+  tick it, and off again the moment you bind a key on Dual wield.
 - Every tap submits the matching vanilla action (the game has a full set: `0x13383` right, `0x2E2F6` left,
   `0x2E2F7` dual), so combos, stamina costs, perks and animations all behave exactly like a real power attack.
 - **Settings tab** in [SKSE Menu Framework](https://www.nexusmods.com/skyrimspecialedition/mods/120352) with
@@ -58,13 +58,13 @@ on first run:
 ```json
 {
 	"binds": {
-		"right": { "key": 260, "mods": 0 },
-		"left":  { "key": -1,  "mods": 0 },
-		"dual":  { "key": -1,  "mods": 0 }
+		"right": { "key": 256, "mods": 1 },
+		"left":  { "key": 257, "mods": 1 },
+		"dual":  { "key": 260, "mods": 0 }
 	},
 	"tapWindowMs": 200,
 	"allowZeroStamina": true,
-	"dualFallback": true,
+	"dualFallback": false,
 	"logging": true,
 	"version": 3
 }
@@ -72,14 +72,17 @@ on first run:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `binds.right.key` | `260` | key for the right-hand power attack (mouse button 5); `-1` = unbound |
-| `binds.right.mods` | `0` | modifiers for it: `1` shift, `2` ctrl, `4` alt, add them together |
-| `binds.left` / `binds.dual` | `-1` | the other two rows, same shape; both unbound by default |
+| `binds.right.key` | `256` | key for the right-hand power attack (left mouse) |
+| `binds.right.mods` | `1` | modifiers for it: `1` shift, `2` ctrl, `4` alt, add them together |
+| `binds.left` | `257`, mods `1` | left-hand power attack (Shift + right mouse) |
+| `binds.dual` | `260`, mods `0` | two-weapon power attack (mouse button 5) |
 | `tapWindowMs` | `200` | press *and* release inside this many ms, otherwise nothing happens (20–1000) |
 | `allowZeroStamina` | `true` | allow the tap with an empty stamina bar |
-| `dualFallback` | `true` | left and right rows do the two-weapon attack while dual wielding and the dual row has no key |
+| `dualFallback` | `false` | left and right rows do the two-weapon attack while dual wielding and the dual row has no key |
 | `logging` | `true` | write `SKSEPowerAttack.log` |
 | `version` | `3` | format of the file; written by the plugin, do not edit |
+
+`-1` in a `key` field means "unbound".
 
 Key codes use SKSE's `InputMap` numbering:
 

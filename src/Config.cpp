@@ -380,16 +380,16 @@ namespace SPA
 		bool changed = false;
 
 		// One row at a time: a junk key costs only that row. The right row is the one bound out of
-		// the box, so it gets its default back; left and dual just come back unbound. Two rows
-		// sharing a chord is legal (the one higher in the menu wins), so duplicates are left
-		// alone - only values that can never fire are repaired.
-		const auto fixKey = [&changed](Chord::Bind& a_bind, Binds::Slot a_slot, int a_default) {
+		// the box, so it gets its whole default chord back; left and dual just come back unbound.
+		// Two rows sharing a chord is legal (the one higher in the menu wins), so duplicates are
+		// left alone - only values that can never fire are repaired.
+		const auto fixKey = [&changed](Chord::Bind& a_bind, Binds::Slot a_slot, const Chord::Bind& a_default) {
 			const auto key = a_bind.key;
 			if (key == kNoKey) {
 				return;  // unbound is a legal state for every row
 			}
 
-			const char* fix = a_default == kNoKey ? "leaving it unbound" : "restoring the default";
+			const char* fix = a_default.IsBound() ? "restoring the default" : "leaving it unbound";
 			if (key < kNoKey || key > kMaxKeyCode) {
 				PAW("config: {} key {} is not bindable, {}", Binds::Name(a_slot), key, fix);
 			} else if (Chord::IsModifier(key)) {
@@ -399,12 +399,12 @@ namespace SPA
 				return;
 			}
 
-			a_bind.key = a_default;
+			a_bind = a_default;  // the whole chord: a repair must not leave a bare key behind
 			changed = true;
 		};
-		fixKey(s.binds[Binds::Index(Binds::Slot::kRight)], Binds::Slot::kRight, kDefaultKey);
-		fixKey(s.binds[Binds::Index(Binds::Slot::kLeft)], Binds::Slot::kLeft, kNoKey);
-		fixKey(s.binds[Binds::Index(Binds::Slot::kDual)], Binds::Slot::kDual, kNoKey);
+		fixKey(s.binds[Binds::Index(Binds::Slot::kRight)], Binds::Slot::kRight, kDefaultRight);
+		fixKey(s.binds[Binds::Index(Binds::Slot::kLeft)], Binds::Slot::kLeft, Chord::Bind{});
+		fixKey(s.binds[Binds::Index(Binds::Slot::kDual)], Binds::Slot::kDual, Chord::Bind{});
 
 		// Only Shift, Ctrl and Alt exist; a hand-edited file may carry anything in the mask.
 		for (std::size_t i = 0; i < Binds::kSlotCount; ++i) {

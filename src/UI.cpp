@@ -155,7 +155,7 @@ namespace SPA::UI
 
 			// Right after the button, before Cancel becomes "the last item".
 			if (ImGui::IsItemHovered()) {
-				ImGui::SetTooltip("Mouse 5 on the right hand, left and dual unbound, dual-wield fallback on, power attacks at 0 stamina, logging on.");
+				ImGui::SetTooltip("Shift + left mouse on the right hand, Shift + right mouse on the left hand, mouse 5 on dual wield, fallback off, power attacks at 0 stamina, logging on.");
 			}
 
 			// Re-read: a confirmed reset above just cleared it, so Cancel must not linger.

@@ -126,7 +126,8 @@ normal swing) and hold it (one normal swing on release).
 - The tests in `tests/` cover exactly those three pure headers (`Chord`, `Binds`, `Selection`) and are the
   reason they are engine-free: `cmake --build build/vs2022 --target spa_ChordTests spa_BindsTests
   spa_SelectionTests`, or `ctest --test-dir build/vs2022 --output-on-failure`.
-- Default is right on mouse button 5 (`260`), no modifier; left and dual are unbound. Every row can be cleared -
+- Defaults are Shift + left mouse on the right row, Shift + right mouse on the left row, mouse button 5 on dual,
+  dual-wield fallback off (`Config.h` `kDefaultRight` / `kDefaultLeft` / `kDefaultDual`). Every row can be cleared -
   the menu is the only way to unbind, so it has to be able to.
 - The jump/block fallback is 200 ms of re-posting tasks, never a thread.
 - No attribution to any other power-attack mod anywhere (README, page, comments); it was removed on request,

@@ -14,9 +14,11 @@ namespace SPA
 	constexpr int kNoKey = Chord::kNoKey;
 	constexpr int kMaxKeyCode = 281;
 
-	// The key the right row gets out of the box (mouse button 5), and the value Validate() puts
-	// back when that row's key is junk.
-	constexpr int kDefaultKey = 260;
+	// The chord each row gets out of the box. Validate() puts the right row's chord back when its
+	// key is junk, because that is the row every fresh install uses.
+	constexpr Chord::Bind kDefaultRight{ 256, Chord::kShift };  // Shift + left mouse
+	constexpr Chord::Bind kDefaultLeft{ 257, Chord::kShift };   // Shift + right mouse
+	constexpr Chord::Bind kDefaultDual{ 260, Chord::kNone };    // mouse button 5
 
 	// Tap window bounds in milliseconds, shared by the setting, its validation and the menu
 	// slider: below 20 ms a human cannot tap it anyway, and above a second it is a hold.
@@ -25,17 +27,12 @@ namespace SPA
 
 	struct Settings
 	{
-		// The three power attack keys in menu order (Binds::Slot). The right hand is the one bound
-		// out of the box: mouse button 5, no modifier. A key is a chord, so the modifier travels
-		// with it instead of being one global setting.
-		Binds::BindList binds{
-			Chord::Bind{ kDefaultKey, Chord::kNone },  // right
-			Chord::Bind{},                             // left
-			Chord::Bind{},                             // dual
-		};
+		// The three power attack keys in menu order (Binds::Slot). A key is a chord, so the modifier
+		// travels with it instead of being one global setting.
+		Binds::BindList binds{ kDefaultRight, kDefaultLeft, kDefaultDual };
 		int  tapWindowMs{ 200 };        // press AND release inside this window, otherwise nothing happens
 		bool allowZeroStamina{ true };  // power attack with an empty stamina bar (0 stamina mods)
-		bool dualFallback{ true };      // left/right rows fire the two-weapon attack when dual wielding
+		bool dualFallback{ false };     // left/right rows fire the two-weapon attack when dual wielding
 		bool logging{ true };           // write SKSEPowerAttack.log
 	};
 
