@@ -39,7 +39,7 @@ namespace SPA
 		// written by a newer build survives a downgrade.
 		bool IsKnownKey(std::string_view a_key)
 		{
-			static constexpr std::string_view kKeys[] = { "version", "hotkey", "modifierKey", "tapWindowMs", "allowZeroStamina", "logging" };
+			static constexpr std::string_view kKeys[] = { "version", "hotkey", "leftHotkey", "modifierKey", "tapWindowMs", "allowZeroStamina", "logging" };
 			return std::find(std::begin(kKeys), std::end(kKeys), a_key) != std::end(kKeys);
 		}
 
@@ -78,6 +78,7 @@ namespace SPA
 			auto json = s_unknown;  // keep what this build does not understand...
 			json.update(nlohmann::json{
 				{ "hotkey", a_settings.hotkey },
+				{ "leftHotkey", a_settings.leftHotkey },
 				{ "modifierKey", a_settings.modifierKey },
 				{ "tapWindowMs", a_settings.tapWindowMs },
 				{ "allowZeroStamina", a_settings.allowZeroStamina },
@@ -142,6 +143,9 @@ namespace SPA
 
 			if (const auto value = ReadInt(a_json, "hotkey")) {
 				s.hotkey = *value;
+			}
+			if (const auto value = ReadInt(a_json, "leftHotkey")) {
+				s.leftHotkey = *value;
 			}
 			if (const auto value = ReadInt(a_json, "modifierKey")) {
 				s.modifierKey = *value;
@@ -243,8 +247,8 @@ namespace SPA
 	{
 		std::scoped_lock lock{ s_lock };
 		const auto& s = Get();
-		return std::format("hotkey={} modifier={} tap={}ms allowZeroStamina={} logging={}",
-			s.hotkey, s.modifierKey, s.tapWindowMs, s.allowZeroStamina, s.logging);
+		return std::format("hotkey={} leftHotkey={} modifier={} tap={}ms allowZeroStamina={} logging={}",
+			s.hotkey, s.leftHotkey, s.modifierKey, s.tapWindowMs, s.allowZeroStamina, s.logging);
 	}
 
 	std::filesystem::path Config::Path()
@@ -265,6 +269,13 @@ namespace SPA
 			s.hotkey = Settings{}.hotkey;
 			changed = true;
 		}
+		// The second key is off by default, so an unbindable value just turns it back off
+		// instead of costing the user a configured main key.
+		if (s.leftHotkey != kNoKey && (s.leftHotkey < 0 || s.leftHotkey > kMaxKeyCode)) {
+			PAW("config: leftHotkey {} is not bindable, leaving the second key unbound", s.leftHotkey);
+			s.leftHotkey = kNoKey;
+			changed = true;
+		}
 		if (s.modifierKey != kNoKey && (s.modifierKey < 0 || s.modifierKey > kMaxKeyCode)) {
 			PAW("config: modifierKey {} is not bindable, disabling the modifier", s.modifierKey);
 			s.modifierKey = kNoKey;
@@ -273,6 +284,13 @@ namespace SPA
 		if (s.modifierKey == s.hotkey) {
 			PAW("config: modifierKey equals hotkey ({}), disabling the modifier", s.modifierKey);
 			s.modifierKey = kNoKey;
+			changed = true;
+		}
+		// Two binds on one key would make the wrong one fire, and the menu refuses the same
+		// combination, so a hand-edited file gets the optional key turned off rather than both.
+		if (s.leftHotkey != kNoKey && (s.leftHotkey == s.hotkey || s.leftHotkey == s.modifierKey)) {
+			PAW("config: leftHotkey {} is already bound to something else, leaving the second key unbound", s.leftHotkey);
+			s.leftHotkey = kNoKey;
 			changed = true;
 		}
 		// A tap window outside the range is clamped rather than reset: keeping the user close to

@@ -2,7 +2,7 @@
 
 Tap mouse button 5 (or any key you bind) and you power attack — press and release inside the tap window;
 holding the key does nothing. **One DLL, nothing else** — no `.esp`, no `.esl`, no Papyrus, no MCM quest: a pure
-SKSE plugin that submits the vanilla `PowerAttackRight` action when you tap.
+SKSE plugin that submits the vanilla power attack action for whatever your hands call for.
 
 > **AI-generated.** Every line of this plugin was written by an AI. No human authored or thoroughly reviewed
 > it, so treat it as a hobby project: expect rough edges, and check it yourself before trusting it in your
@@ -12,10 +12,14 @@ SKSE plugin that submits the vanilla `PowerAttackRight` action when you tap.
 
 - **Tap, not hold.** The power attack fires when the key is *released*, and only if the press was shorter than the
   tap window (200 ms by default). A hold does nothing, so the key is safe to bind next to sprint or jump.
-- **One tap = one power attack.** Every tap submits the vanilla right-hand power attack action, so combos,
-  stamina costs, perks and animations all behave exactly like a real power attack.
+- **The hand is picked for you.** A weapon in both hands gets the vanilla two-weapon power attack; a weapon in one
+  hand attacks with that hand. Nothing to configure, and it keeps up when you change loadout mid-fight.
+- **One tap = one power attack.** Every tap submits the matching vanilla action, so combos, stamina costs, perks
+  and animations all behave exactly like a real power attack.
+- **Optional second key.** Unbound by default. It uses the same automatic hand selection; the only difference is
+  with empty hands, where it swings left instead of right. Bind it if you want a dedicated left tap.
 - **Jump / block fallback.** While jumping or blocking the power attack action is eaten by the engine, so in
-  those two cases the plugin performs a normal right attack first and the power attack 200 ms later.
+  those two cases the plugin performs the normal attack of the same hand first and the power attack 200 ms later.
 - **Left alone:** bows, crossbows, staves, horses, killmoves, sitting/sleeping, paused game, dialogue.
 - **Empty stamina** is allowed by default (for mods that let you power attack at 0 stamina); one checkbox
   turns that off.
@@ -32,6 +36,7 @@ defaults on first run:
 | Key | Default | Meaning |
 |---|---|---|
 | `hotkey` | `260` | key that triggers the power attack (mouse button 5) |
+| `leftHotkey` | `-1` | optional second key, same auto selection with a left-hand fallback; `-1` = unbound |
 | `modifierKey` | `-1` | optional modifier; `-1` = none |
 | `tapWindowMs` | `200` | press *and* release inside this many ms, otherwise nothing happens (20–1000) |
 | `allowZeroStamina` | `true` | allow the tap with an empty stamina bar |
@@ -46,6 +51,10 @@ update never overwrites a tuned file.
 
 Upgrading from this plugin's pre-rename build? Its `OneClickPowerAttack.json` sits next to the DLL and is
 imported once on first run, then left untouched.
+
+A key can only have one job. Binding a key that another bind already holds takes it over and leaves the other
+row unbound; the main power attack key is the exception, since a tap with no key is useless, so the menu refuses
+to give its key away instead.
 
 Key codes use SKSE's `InputMap` numbering:
 

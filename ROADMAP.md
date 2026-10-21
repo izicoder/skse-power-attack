@@ -20,7 +20,13 @@ Three comments since release, none of them a bug report:
 | Comment | Verdict |
 |---|---|
 | "why is it called vibe coded if everyone hates it" + "you get to vibe while the ai codes" | No action. Page text and the AI disclosure stay as they are. |
-| "Could you vibe code a mod for dual wield power attacks next" | Not this mod. See below. |
+| "Could you vibe code a mod for dual wield power attacks next" | Shipped in the next release, without a setting: the plugin now picks the hand from what you hold, so two weapons get the vanilla two-weapon power attack. |
+
+## Done since 0.2.1
+
+- **Automatic hand selection.** Both hands with weapons -> dual power attack; one weapon -> that hand; empty
+  hands -> the tapped key's own hand. No config key, no menu toggle (`src/Selection.h`, unit tested).
+- **Optional second key** (`leftHotkey`), unbound by default: same selection, left-hand fallback.
 
 ## Next
 
@@ -31,17 +37,15 @@ Nothing here is promised; each item is only worth doing if the idea survives bei
 2. **Wider runtime check.** `0.2.1` was built and played on 1.6.1170. Confirming it loads on the other common
    AE runtimes and on SE 1.5.97 costs a DLL load and one tap each, and it is the cheapest way to stop the
    "requires Address Library" footnote turning into a support thread.
-3. **Left-hand variant.** A setting (`hand`: right/left) that submits `PowerAttackLeft` instead. Same code path,
-   one action id, no new concepts. Probably a candidate for `0.3.0`.
-4. **Menu polish.** The tab currently shows rebinds, the stamina toggle and logging. A "press a key to bind"
-   flow instead of typing a number would cut the support cost of key codes, if it can be done without pulling
-   in a new dependency.
+3. **Dual-wield check in play.** `ActionDualPowerAttack` is vanilla, but it has not been played yet: verify it
+   fires with sword+sword, dagger+sword and with MCO/ADXP installed.
+4. **Menu polish.** The menu already captures a key press instead of asking for a code; what is left is showing
+   the picked hand in the tab, if the player wants to see it.
 
 ## Deliberately not planned
 
-- **Dual-wield power attack** (the one request so far). It needs the dual attack actions and a two-weapon state
-  check, which turns a one-action plugin into a combat-behaviour plugin, and it collides with every animation
-  framework that already offers it. If it ever happens it is a separate mod.
+- **A "which hand" setting.** Tried and rejected: it is configuration the player should not have to think about,
+  and the hands already say what they want.
 - Attack-window notify or queue, long-press modes, block unbinding, a MCM, a calendar of extras. "Simple" is what
   makes it compatible with everything.
 - VR.

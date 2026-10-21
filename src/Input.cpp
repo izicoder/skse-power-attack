@@ -69,10 +69,35 @@ namespace SPA
 	{
 		namespace
 		{
+			// One slot per bind: the main key and the optional second key each need their own
+			// press timestamp and modifier snapshot, or a tap on one would judge the other.
+			struct Tap
+			{
+				std::atomic<std::int64_t> pressTicks{ 0 };
+				std::atomic<bool>         modifierAtPress{ true };
+			};
+
+			std::array<Tap, 2> s_taps{};
 			std::atomic<bool> s_modifierHeld{ false };
-			std::atomic<bool> s_modifierAtPress{ true };
-			std::atomic<std::int64_t> s_pressTicks{ 0 };
 			std::atomic<int>  s_clicks{ 0 };
+
+			// Which slot a pressed key belongs to, or nullopt for a key this plugin does not use.
+			// The second key is unbound (-1) by default and then never matches.
+			std::optional<Selection::Key> KeyFor(const Settings& a_settings, int a_code)
+			{
+				if (a_code == a_settings.hotkey) {
+					return Selection::Key::kMain;
+				}
+				if (a_settings.leftHotkey != kNoKey && a_code == a_settings.leftHotkey) {
+					return Selection::Key::kLeft;
+				}
+				return std::nullopt;
+			}
+
+			Tap& SlotFor(Selection::Key a_key)
+			{
+				return s_taps[static_cast<std::size_t>(a_key)];
+			}
 
 			bool IsRidingHorse(RE::Actor* a_actor)
 			{
@@ -162,23 +187,25 @@ namespace SPA
 								}
 							}
 
-							if (code != settings.hotkey) {
+							const auto key = KeyFor(settings, code);
+							if (!key) {
 								continue;
 							}
+							auto& tap = SlotFor(*key);
 
 							if (button->Value() > 0.0f) {
 								// Press and every repeat while held. Only the first press arms the
 								// tap, and a hold never fires: the key can be bound next to sprint
 								// or jump without the power attack going off every frame.
 								if (down) {
-									s_pressTicks.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_release);
+									tap.pressTicks.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_release);
 									// The modifier has to be down when the tap starts; releasing it
 									// first and the hotkey second still counts.
-									s_modifierAtPress.store(
+									tap.modifierAtPress.store(
 										settings.modifierKey == kNoKey || s_modifierHeld.load(std::memory_order_acquire),
 										std::memory_order_release);
-									PAI("input: '{}' down, release within {} ms to power attack",
-										Keys::Describe(code), settings.tapWindowMs);
+									PAI("input: '{}' down ({} key), release within {} ms to power attack",
+										Keys::Describe(code), *key == Selection::Key::kLeft ? "second" : "main", settings.tapWindowMs);
 								}
 								continue;
 							}
@@ -186,7 +213,7 @@ namespace SPA
 							// Release: this is where the click is judged. The engine reports how long
 							// the button was down; the timestamp taken at the press covers the case
 							// where it does not.
-							const auto   pressed = s_pressTicks.exchange(0, std::memory_order_acq_rel);
+							const auto   pressed = tap.pressTicks.exchange(0, std::memory_order_acq_rel);
 							const auto   held = button->HeldDuration();
 							const auto   now = std::chrono::steady_clock::now().time_since_epoch().count();
 							const auto   ticksPerSecond = static_cast<double>(std::chrono::steady_clock::period::den) /
@@ -208,7 +235,7 @@ namespace SPA
 								continue;
 							}
 
-							if (!s_modifierAtPress.exchange(false, std::memory_order_acq_rel)) {
+							if (!tap.modifierAtPress.exchange(false, std::memory_order_acq_rel)) {
 								PA("input: tap on '{}' started without the modifier '{}', ignoring",
 									Keys::Describe(code), Keys::Describe(settings.modifierKey));
 								continue;
@@ -221,7 +248,7 @@ namespace SPA
 
 							const auto click = s_clicks.fetch_add(1, std::memory_order_relaxed) + 1;
 							PAI("input: tap #{} on '{}' (held {} ms) -> power attack", click, Keys::Describe(code), heldMs);
-							Attack::PowerAttack("tap");
+							Attack::PowerAttack("tap", Selection::FallbackForKey(*key));
 						}
 					} catch (const std::exception& e) {
 						PAE("input: sink threw: {}", e.what());
@@ -259,10 +286,12 @@ namespace SPA
 	void ResetState()
 	{
 		s_modifierHeld.store(false, std::memory_order_release);
-		s_modifierAtPress.store(true, std::memory_order_release);
-		// A press that was still waiting for its release is dropped: the release would otherwise
-		// arrive after a load and fire a power attack nobody asked for.
-		s_pressTicks.store(0, std::memory_order_release);
+		for (auto& tap : s_taps) {
+			tap.modifierAtPress.store(true, std::memory_order_release);
+			// A press that was still waiting for its release is dropped: the release would
+			// otherwise arrive after a load and fire a power attack nobody asked for.
+			tap.pressTicks.store(0, std::memory_order_release);
+		}
 		PA("input: modifier and pending tap state cleared");
 	}
 
@@ -270,7 +299,9 @@ namespace SPA
 	{
 		if (auto* manager = RE::BSInputDeviceManager::GetSingleton()) {
 			manager->AddEventSink(Sink::GetSingleton());
-			PAI("input: input sink registered (tap '{}' to power attack)", Keys::Describe(Config::Cached().hotkey));
+			const auto& settings = Config::Cached();
+			PAI("input: input sink registered (tap '{}' to power attack, second key: {})",
+				Keys::Describe(settings.hotkey), Keys::Describe(settings.leftHotkey));
 		} else {
 			PAE("input: BSInputDeviceManager singleton is null, the tap will not work");
 		}

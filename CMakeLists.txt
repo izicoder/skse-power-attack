@@ -89,6 +89,26 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 	OUTPUT_NAME "${PROJECT_NAME}"
 )
 
+# ---------------------------------------------------------------------------
+# Unit tests for the tap decision (Selection.h). Engine-free on purpose: no CommonLibSSE, no
+# SKSE, no precompiled header, so they build in seconds and run without the game.
+#   cmake --build build/vs2022 --target spa_tests
+#   ctest --test-dir build/vs2022 --output-on-failure
+# ---------------------------------------------------------------------------
+option(SPA_BUILD_TESTS "Build the unit tests for the pure selection logic" ON)
+if(SPA_BUILD_TESTS)
+	enable_testing()
+	foreach(test_name IN ITEMS SelectionTests BindsTests)
+		add_executable(spa_${test_name} tests/${test_name}.cpp)
+		target_include_directories(spa_${test_name} PRIVATE src)
+		target_compile_features(spa_${test_name} PRIVATE cxx_std_23)
+		if(MSVC)
+			target_compile_options(spa_${test_name} PRIVATE /W4 /permissive- /EHsc /utf-8)
+		endif()
+		add_test(NAME ${test_name} COMMAND spa_${test_name})
+	endforeach()
+endif()
+
 # Optional auto-deploy: set MOD_OUTPUT_FOLDER (e.g. in a git-ignored CMakeUserPresets.json) to a
 # mod folder. The JSON is not copied: it holds the user's settings.
 if(MOD_OUTPUT_FOLDER)

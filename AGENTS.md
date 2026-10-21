@@ -18,9 +18,12 @@ anything that has to wait, see `Attack::ScheduleDelayedPowerAttack`), and no con
 | Path | What it does |
 |---|---|
 | `src/Plugin.cpp` | `SKSEPlugin_Load` + messaging: config load, action init, input/UI registration. |
-| `src/Config.h/.cpp` | `Settings` (5 fields), JSON load/save next to the DLL, format version + migrations, validation, revision counter. |
-| `src/Attack.h/.cpp` | Resolves `AttackRight` / `PowerAttackRight`, submits them through the task interface, jump/block fallback as a task chain (no threads). |
-| `src/Input.h/.cpp` | Key encoding (SKSE InputMap numbering), labels, the tap sink (press + release inside the window), its gates, the menu-open sink. |
+| `src/Config.h/.cpp` | `Settings` (6 fields), JSON load/save next to the DLL, format version + migrations, validation, revision counter. |
+| `src/Selection.h` | The tap decision, engine-free: hand(s) held + which key -> right, left or dual power attack. Unit tested. |
+| `src/Binds.h` | Bind assignment, engine-free: one key, one role ("last one wins", the main key is protected). Unit tested. |
+| `src/Attack.h/.cpp` | Resolves all six vanilla attack/power-attack actions, submits them through the task interface, jump/block fallback as a task chain (no threads). |
+| `src/Input.h/.cpp` | Key encoding (SKSE InputMap numbering), labels, the tap sink (press + release inside the window) for both keys, its gates, the menu-open sink. |
+| `tests/` | `SelectionTests.cpp`, `BindsTests.cpp`: plain `main()`, no framework, no engine. |
 | `src/UI.h/.cpp` | SKSE Menu Framework tab: rebinds, toggles, two-click reset. |
 | `src/Log.h` | `PA`/`PAI`/`PAW`/`PAE`, trace level, flushed per line. |
 | `extern/SKSEMenuFramework.h` | Vendored framework header (do not edit). |
@@ -51,14 +54,17 @@ would silently replace a DLL the running game has loaded. The default deploy tar
 
 ## Verifying a change
 
-No automated tests. A change counts as verified when:
+A change counts as verified when:
 
-1. `cmake --build build/vs2022` (or `Build-Release.ps1` when the version matters) ends with
+1. `ctest --test-dir build/vs2022 --output-on-failure` passes (`SelectionTests`, `BindsTests`). They build in
+   seconds without the engine, so write the case there before touching `Selection.h` or `Binds.h`.
+2. `cmake --build build/vs2022` (or `Build-Release.ps1` when the version matters) ends with
    `Linking CXX shared library SKSEPowerAttack.dll` and no error lines.
-2. `.\tools\Deploy.ps1` puts it in the MO2 folder (refuses while `SkyrimSE` runs), the mod is enabled, Skyrim is
+3. `.\tools\Deploy.ps1` puts it in the MO2 folder (refuses while `SkyrimSE` runs), the mod is enabled, Skyrim is
    launched.
-3. `…\Documents\My Games\Skyrim Special Edition\SKSE\SKSEPowerAttack.log` shows the banner, `config: loaded:`,
+4. `…\Documents\My Games\Skyrim Special Edition\SKSE\SKSEPowerAttack.log` shows the banner, `config: loaded:`,
    `input: input sink registered` and then one `tap #N ...` line per tap - see the log lines under Gotchas.
+   `attack: 'right power attack' -> action 0x00013383 performed=true` names the hand that was picked.
 
 ## Release and the mod page
 
@@ -83,6 +89,20 @@ No automated tests. A change counts as verified when:
 - **Tap, not hold.** The attack fires on release, and only if the press was shorter than `tapWindowMs`
   (default 200 ms, range 20-1000). The modifier is judged at press, the gates at release. This mirrors
   BlinkDash's tap semantics deliberately.
+- **The hand is not a setting.** `src/Selection.h` picks the action from what the player holds: weapons in both
+  hands -> `ActionDualPowerAttack`, one weapon -> that hand's action, nothing -> the tapped key's own hand. The
+  vanilla form ids are `0x13004` left attack, `0x13005` right attack, `0x50C96` dual attack, `0x2E2F6` left
+  power, `0x13383` right power, `0x2E2F7` dual power. An earlier draft shipped a `powerAttack: right|left|dual`
+  key; the owner rejected it as clunky configuration. Do not bring it back.
+- **Two keys, one rule.** `hotkey` (mouse button 5) and `leftHotkey` (unbound by default) both call the same
+  `Selection::Choose`; only the empty-handed fallback differs (`Selection::FallbackForKey`). The second key is a
+  mirror, not a second feature.
+- **One key, one role.** `src/Binds.h` `Assign()` gives a key to whoever was bound last and unbinds the previous
+  holder; the main key is protected (the menu refuses instead of taking it). The menu goes through `Assign()`;
+  `Validate()` applies the same precedence to a hand-edited file by dropping the optional key.
+- The tests in `tests/` cover exactly those two pure headers (`Selection`, `Binds`) and are the reason they are
+  engine-free: `cmake --build build/vs2022 --target spa_SelectionTests spa_BindsTests`, or
+  `ctest --test-dir build/vs2022 --output-on-failure`.
 - Default hotkey is mouse button 5 (`260`), not right mouse.
 - The jump/block fallback is 200 ms of re-posting tasks, never a thread.
 - No attribution to any other power-attack mod anywhere (README, page, comments); it was removed on request,

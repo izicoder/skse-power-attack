@@ -17,6 +17,7 @@ namespace SPA::UI
 		{
 			kNone,
 			kHotkey,
+			kLeftHotkey,
 			kModifier
 		};
 
@@ -78,8 +79,19 @@ namespace SPA::UI
 			}
 		}
 
+		std::optional<Binds::Target> ToTarget(Bind a_bind)
+		{
+			switch (a_bind) {
+			case Bind::kHotkey: return Binds::Target::kHotkey;
+			case Bind::kLeftHotkey: return Binds::Target::kLeftHotkey;
+			case Bind::kModifier: return Binds::Target::kModifier;
+			case Bind::kNone: break;
+			}
+			return std::nullopt;
+		}
+
 		// One key bind row: current key, Rebind, and (optionally) Clear.
-		void RenderBind(const char* a_label, int a_code, Bind a_target, bool a_allowNone)
+		void RenderBind(const char* a_label, int& a_value, Bind a_target, bool a_allowNone, const char* a_clearReason)
 		{
 			const bool capturing = s_capture.load() == a_target;
 
@@ -99,18 +111,18 @@ namespace SPA::UI
 
 			{
 				const ScopedTextColor value{ kValueColor };
-				ImGui::Text("%s", Keys::Describe(a_code).c_str());
+				ImGui::Text("%s", Keys::Describe(a_value).c_str());
 			}
 			ImGui::SameLine();
 			if (ImGui::Button(std::format("Rebind##{}", static_cast<int>(a_target)).c_str())) {
 				BeginCapture(a_target);
 			}
-			if (a_allowNone && a_code != kNoKey) {
+			if (a_allowNone && a_value != kNoKey) {
 				ImGui::SameLine();
 				if (ImGui::Button(std::format("Clear##{}", static_cast<int>(a_target)).c_str())) {
-					Config::Get().modifierKey = kNoKey;
+					a_value = kNoKey;
 					Config::Touch();
-					SaveNow("modifier cleared");
+					SaveNow(a_clearReason);
 				}
 			}
 		}
@@ -165,8 +177,14 @@ namespace SPA::UI
 			auto& settings = Config::Get();
 
 			ImGui::SeparatorText("Click");
-			RenderBind("Power attack key", settings.hotkey, Bind::kHotkey, false);
-			RenderBind("Modifier key (optional)", settings.modifierKey, Bind::kModifier, true);
+			RenderBind("Power attack key", settings.hotkey, Bind::kHotkey, false, "");
+			RenderBind("Power attack key (left, optional)", settings.leftHotkey, Bind::kLeftHotkey, true, "second key cleared");
+			RenderBind("Modifier key (optional)", settings.modifierKey, Bind::kModifier, true, "modifier cleared");
+
+			// The action is not a setting: it follows what is in the hands, so there is nothing to
+			// configure and nothing to get wrong when the loadout changes.
+			ImGui::Spacing();
+			Body("Both keys attack automatically: two weapons in hand power attack with both, one weapon attacks with that hand. The left key only differs with empty hands, where it swings left. Bind it if you want a dedicated left tap.");
 
 			ImGui::Spacing();
 			ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10.0f);
@@ -242,20 +260,17 @@ namespace SPA::UI
 					continue;
 				}
 
+				const auto targetValue = ToTarget(target);
+				if (!targetValue) {
+					continue;
+				}
+
 				auto& settings = Config::Get();
-				if (target == Bind::kHotkey) {
-					if (code == settings.modifierKey) {
-						// Binding the modifier as the hotkey would make the tap impossible.
-						PAW("ui: '{}' is already the modifier, pick another key", Keys::Describe(code));
-						continue;
-					}
-					settings.hotkey = code;
-				} else {
-					if (code == settings.hotkey) {
-						PAW("ui: '{}' is already the power attack key, pick another key", Keys::Describe(code));
-						continue;
-					}
-					settings.modifierKey = code;
+				// One key is one role: binding a key that another bind holds takes it away, and the
+				// other row shows as unbound. Only the main key is protected (Binds::Assign).
+				if (!Binds::Assign(settings.hotkey, settings.leftHotkey, settings.modifierKey, *targetValue, code)) {
+					PAW("ui: '{}' is the power attack key, pick another one", Keys::Describe(code));
+					continue;
 				}
 
 				PAI("ui: captured '{}' -> {}", Keys::Describe(code), Config::Describe());
