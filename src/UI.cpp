@@ -208,6 +208,17 @@ namespace SPA::UI
 			Body("Nothing happens at all with a bow, crossbow or staff out, on a horse, mid killmove, sitting, in dialogue, or with the game paused. The key keeps its normal job there.");
 
 			ImGui::Spacing();
+			if (ImGui::Checkbox("Attack even while a block is up", &settings.submitWhileBlocking)) {
+				PA("ui: submitWhileBlocking -> {}", settings.submitWhileBlocking);
+				Config::Touch();
+				SaveNow("submit-while-blocking changed");
+			}
+			ImGui::Indent();
+			Body("You almost certainly never want this. It is the old behaviour, kept for the one person who wants an attack out of a block.");
+			Body("It fights the game: the attack is thrown away, and the shield or torch can stay stuck in front of you until you press block again. Tick it, test it, and untick it if anything sticks.");
+			ImGui::Unindent();
+
+			ImGui::Spacing();
 			ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10.0f);
 			if (ImGui::SliderInt("Tap window (ms)", &settings.tapWindowMs, kMinTapWindowMs, kMaxTapWindowMs)) {
 				// The slider is the range, so this is only a guard against a hand-edited value.

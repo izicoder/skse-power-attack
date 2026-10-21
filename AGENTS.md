@@ -131,6 +131,8 @@ normal swing) and hold it (one normal swing on release).
   return. The press still raises the block (the game reads its own held-button state, so blanking the event does not
   stop it) and the release lowers it. An attack submitted behind the engine's back there is what left a shield up for
   good - do not bring back the old normal-then-power fallback for blocks. Jumping keeps that fallback; it is safe.
+  `Settings::submitWhileBlocking` (off, menu checkbox) opts back into the old submit-while-blocking path for the one
+  person who asks; it is documented in the menu as "you almost certainly never want this" and that is the point.
 - **What a hand can attack with is the engine's call, not a list.** There is no "can attack" record flag: `BGSAction`
   is a keyword plus an index, a torch is a `TESObjectLIGH` (bash only, like a shield), and modded items are unknown.
   So `ProcessAction` returning `performed=false` is the only abort, and it is final - never add a fallback on it.

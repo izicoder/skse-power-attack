@@ -63,6 +63,7 @@ on first run:
 	"tapWindowMs": 200,
 	"allowZeroStamina": true,
 	"dualFallback": false,
+	"submitWhileBlocking": false,
 	"logging": true,
 	"version": 3
 }
@@ -77,6 +78,7 @@ on first run:
 | `tapWindowMs` | `200` | press *and* release inside this many ms, otherwise nothing happens (20–1000) |
 | `allowZeroStamina` | `true` | allow the tap with an empty stamina bar |
 | `dualFallback` | `false` | left and right rows do the two-weapon attack while dual wielding and the dual row has no key |
+| `submitWhileBlocking` | `false` | submit the attack even with a block up. Only for the curious: the game throws it away and can leave a shield stuck, so leave it off |
 | `logging` | `true` | write `SKSEPowerAttack.log` |
 | `version` | `3` | format of the file; written by the plugin, do not edit |
 

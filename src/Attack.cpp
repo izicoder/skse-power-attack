@@ -224,13 +224,19 @@ namespace SPA::Attack
 		const bool isBlocking = IsBlocking(player);
 		PA("attack: {} (jumping={} blocking={}) -> {}", a_reason, isJumping, isBlocking, pick.name);
 
-		if (isBlocking) {
+		// Both states eat the power attack action, so both get the normal attack of the same hand
+		// first and the power attack a moment later. A block only gets that far when the user has
+		// ticked submitWhileBlocking: it can leave a shield or torch up for good, and the engine
+		// bashes there anyway.
+		const bool submit = isJumping || (isBlocking && Config::Cached().submitWhileBlocking);
+		if (isBlocking && !submit) {
 			PA("attack: blocking, nothing submitted (a shield or torch bashes through the game)");
 			return;
 		}
 
-		if (isJumping) {
-			PerformAction(pick.actions.attack, player, "tap while jumping, normal attack first");
+		if (submit) {
+			PerformAction(pick.actions.attack, player,
+				isBlocking ? "tap while blocking, normal attack first" : "tap while jumping, normal attack first");
 			DelayedPowerAttack(player, pick.actions.power);
 			return;
 		}
@@ -254,7 +260,7 @@ namespace SPA::Attack
 
 		// Same reason as the tap: the engine owns attacks from a block, and one submitted
 		// underneath it leaves the shield up.
-		if (IsBlocking(player)) {
+		if (IsBlocking(player) && !Config::Cached().submitWhileBlocking) {
 			PA("attack: {} while blocking, nothing submitted", a_reason);
 			return;
 		}

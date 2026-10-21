@@ -43,7 +43,7 @@ namespace SPA
 		// written by a newer build survives a downgrade.
 		bool IsKnownKey(std::string_view a_key)
 		{
-			static constexpr std::string_view kKeys[] = { "version", "binds", "tapWindowMs", "allowZeroStamina", "dualFallback", "logging" };
+			static constexpr std::string_view kKeys[] = { "version", "binds", "tapWindowMs", "allowZeroStamina", "dualFallback", "submitWhileBlocking", "logging" };
 			return std::find(std::begin(kKeys), std::end(kKeys), a_key) != std::end(kKeys);
 		}
 
@@ -117,6 +117,7 @@ namespace SPA
 				{ "tapWindowMs", a_settings.tapWindowMs },
 				{ "allowZeroStamina", a_settings.allowZeroStamina },
 				{ "dualFallback", a_settings.dualFallback },
+				{ "submitWhileBlocking", a_settings.submitWhileBlocking },
 				{ "logging", a_settings.logging },
 			});
 			json["version"] = s_fileVersion;  // ...and stamp the format we wrote (never lower than what we read)
@@ -268,6 +269,9 @@ namespace SPA
 			if (const auto value = ReadBool(a_json, "dualFallback")) {
 				s.dualFallback = *value;
 			}
+			if (const auto value = ReadBool(a_json, "submitWhileBlocking")) {
+				s.submitWhileBlocking = *value;
+			}
 			if (const auto value = ReadBool(a_json, "logging")) {
 				s.logging = *value;
 			}
@@ -362,9 +366,9 @@ namespace SPA
 		const auto  bind = [](const Chord::Bind& a_bind) {
 			return a_bind.IsBound() ? std::format("{} mods={}", a_bind.key, a_bind.mods) : std::string{ "off" };
 		};
-		return std::format("binds: right={} left={} dual={} tap={}ms allowZeroStamina={} dualFallback={} logging={}",
+		return std::format("binds: right={} left={} dual={} tap={}ms allowZeroStamina={} dualFallback={} submitWhileBlocking={} logging={}",
 			bind(s.binds[0]), bind(s.binds[1]), bind(s.binds[2]),
-			s.tapWindowMs, s.allowZeroStamina, s.dualFallback, s.logging);
+			s.tapWindowMs, s.allowZeroStamina, s.dualFallback, s.submitWhileBlocking, s.logging);
 	}
 
 	std::filesystem::path Config::Path()

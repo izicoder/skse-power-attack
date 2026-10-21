@@ -33,6 +33,7 @@ namespace SPA
 		int  tapWindowMs{ 200 };        // press AND release inside this window, otherwise nothing happens
 		bool allowZeroStamina{ true };  // power attack with an empty stamina bar (0 stamina mods)
 		bool dualFallback{ false };     // left/right rows fire the two-weapon attack when dual wielding
+		bool submitWhileBlocking{ false };  // old behaviour: submit the attack even with a block up (stuck shield)
 		bool logging{ true };           // write SKSEPowerAttack.log
 	};
 
