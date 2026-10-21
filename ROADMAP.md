@@ -42,9 +42,10 @@ Three comments since release, none of them a bug report:
 - **Modifiers read from the whole input batch first** (`src/Input.cpp`): Ctrl and Alt pressed in the same poll as
   the chord key were dispatched after it, which made those two chords miss about half the time. Shift usually
   arrives first, which is why it looked fine.
-- **The game's attack key is cancelled** (`src/Input.cpp`): a press the game would attack with is reported as
-  handled (`kStop`) while a row owns it, so a tap gives only the power attack. A hold of that key is handed back
-  as the normal attack. Untested in play - see "Next".
+- **Chords that name a modifier take their press, and so does the game's attack key** (`src/Input.cpp`): the sink
+  answers `kStop` while a row owns the press, so Shift + right mouse no longer blocks and a bound left mouse no
+  longer swings twice. A hold of a taken press is handed back as the row's normal attack. Untested in play - see
+  "Next".
 
 ## Next
 

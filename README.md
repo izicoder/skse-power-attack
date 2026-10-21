@@ -24,12 +24,13 @@ no MCM quest: a pure SKSE plugin that submits the vanilla power attack action of
    held never blocks a plain `Mouse 5`.
 5. **Two rows, one chord.** A chord that names modifiers beats a bare chord on the same key, and two rows with
    the exact same chord resolve to the one higher in the menu. Nothing is stolen when you rebind.
-6. **The game's own attack key is taken over.** If a row uses the key the game attacks with (left mouse by
-   default), the plugin keeps that press away from the game, so a tap gives *only* the power attack instead of a
-   normal swing plus a power attack. Let the same key go after the tap window and the press is handed back as the
-   normal attack — holding the button still swings.
-7. **Any other key is left alone.** A key the game does not attack with (mouse 4/5, an unused letter) keeps
-   whatever it did before; there is nothing to cancel.
+6. **Your chords own their press.** A chord that names Shift, Ctrl or Alt takes that press from the game: vanilla
+   ignores modifiers, so its action is not what you asked for. Shift + right mouse does not block, Shift + E does
+   not loot, Shift + Space does not jump. Hold the key past the tap window and the press is handed back as that
+   row's normal attack.
+7. **Bare keys stay the game's, with one exception.** A key you bind without a modifier keeps its vanilla job, so
+   mouse 4/5 and unused letters are untouched. The exception is the key the game attacks with (left mouse by
+   default): that press is always taken, so a tap gives only the power attack, and a hold hands back a normal swing.
 8. **Jumping or blocking.** The engine eats the power attack action in those two states, so the plugin performs
    the normal attack of the same row first and the power attack 200 ms later.
 9. **Never a power attack:** bows, crossbows and staves equipped; on a horse; in a killmove; sitting or
@@ -119,10 +120,10 @@ imported once on first run, then left untouched.
 - **No hooks.** The plugin never patches game code, never rewrites a vtable and never edits a record: it reads
   input events, looks up two vanilla actions and calls the engine's own `ProcessAction` through the task
   interface.
-- **Input is passed on, except the attack key you bind.** The sink reports "handled" only for the press and
-  release of a key the game itself attacks with, and only while a row is bound to it — that is the cancel in
-  rule 5 above. Every other event reaches the game unchanged, so the game and every other mod see exactly what
-  they would without it.
+- **Input is passed on, except what your chords take.** The sink reports "handled" for the press and release of
+  a key bound to a chord with a modifier, and for the game's own attack key whenever a row owns it (rule 6 and 7
+  above). Every other event reaches the game unchanged, so the game and every other mod see exactly what they
+  would without it.
 - **No threads.** The 200 ms jump/block fallback is a chain of main-thread tasks, not a worker thread.
 - **Menu optional.** With SKSE Menu Framework installed there is a settings tab; without it the menu is skipped
   and the JSON still applies.

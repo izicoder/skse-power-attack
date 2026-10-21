@@ -108,11 +108,8 @@ namespace SPA
 				return RE::INPUT_DEVICE::kGamepad;
 			}
 
-			// True when the game itself attacks with this key. Those presses are the only ones the
-			// sink takes away from the game, because they are the only ones where the tap would
-			// otherwise produce two attacks. A key the game ignores (Mouse 5, an unused letter) is
-			// left alone: there is nothing to cancel, and swallowing it could only cost the game a
-			// binding this build does not know about.
+			// True when the game itself attacks with this key. That press is taken even for a bare
+			// chord, because a tap on it would otherwise swing normally and power attack.
 			bool IsGameAttackKey(int a_code)
 			{
 				auto* map = RE::ControlMap::GetSingleton();
@@ -257,9 +254,13 @@ namespace SPA
 								auto&       tap = s_taps[Binds::Index(*slot)];
 								const auto& bind = settings.binds[Binds::Index(*slot)];
 
-								// A gate means the game must keep its press: with a bow drawn the same
-								// click has to fire the arrow, not vanish into a tap that is rejected.
-								const bool take = IsGameAttackKey(code) && GateReason(settings) == nullptr;
+								// Vanilla ignores modifiers, so a chord that names one is a press the
+								// player meant for the plugin: the game would otherwise do the
+								// unmodified action (right mouse blocks, E loots). A bare chord is
+								// taken only when the game attacks with that key. A gate means the
+								// game keeps its press: a drawn bow has to fire.
+								const bool take = (bind.mods != Chord::kNone || IsGameAttackKey(code)) &&
+									GateReason(settings) == nullptr;
 
 								tap.code.store(code, std::memory_order_release);
 								tap.taken.store(take, std::memory_order_release);
@@ -340,10 +341,10 @@ namespace SPA
 						PAE("input: sink threw a non-std exception");
 					}
 
-					// kStop is how the tap cancels the normal attack: the game must not also see the
-					// press of the key it attacks with. Whether it honours that inside its own input
-					// handling is unverified - look for ", the game does not get this press" on the
-					// down line when a tap still double-swings.
+					// kStop is how a matched chord keeps its press away from the game: without it a
+					// modified click blocks, or a bound attack key swings twice. Whether the game honours
+					// it inside its own input handling is unverified - look for ", the game does not get
+					// this press" on the down line when a tap still does the vanilla thing too.
 					return taken ? RE::BSEventNotifyControl::kStop : RE::BSEventNotifyControl::kContinue;
 				}
 			};

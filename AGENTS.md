@@ -11,9 +11,9 @@ long-press modes, block unbinding) unless asked; "simple" is the point.
 
 Keep the surface small, because that is what "compatible with everything" means here: no hooks, no vtable or
 record edits, no threads (use the task interface and a re-posting task for anything that has to wait, see
-`Attack::ScheduleDelayedPowerAttack`), and no config file shipped. The one exception to "input is never
-consumed": a press of a key the game itself attacks with is reported as handled (`kStop`) while a row owns it,
-because that is the only way a tap can cancel the normal swing. Nothing else is ever consumed.
+`Attack::ScheduleDelayedPowerAttack`), and no config file shipped. Input is consumed only for what a chord owns:
+a press matching a chord that names a modifier, and the game's own attack key while a row owns it. Everything
+else is passed on untouched.
 
 ## Layout
 
@@ -119,10 +119,12 @@ normal swing) and hold it (one normal swing on release).
   key can be dispatched after it (Shift usually arrives first, which is why only Ctrl and Alt looked unreliable).
   Do not switch to `BSInputDevice::IsPressed` for this: `GetKeyboard()` drags `BSWin32KeyboardDevice` into the
   link and the prebuilt CommonLibSSE bundle leaves those vtables unresolved (`LNK2001`).
-- **The game's attack key is cancelled, nothing else is.** `Input::IsGameAttackKey` asks the control map
-  (`"Attack"` event id) whether the game attacks with that key; only then does the sink answer `kStop` for the
-  press and its release. If that press turns out to be a hold or hits a gate, `Attack::NormalAttack` hands the
-  swing back, so holding a bound attack button still attacks. Keys the game ignores are never swallowed.
+- **A matched chord owns its press, and so does the game's attack key.** The sink answers `kStop` for a press
+  whose matched chord names a modifier (vanilla ignores modifiers, so its unmodified action is not what the player
+  asked for: Shift + right mouse must not block, Shift + E must not loot) and for the game's attack key even on a
+  bare chord (`Input::IsGameAttackKey`, the control map's `"Attack"` event id), which is what stops a tap from
+  swinging twice. A gate at press leaves the press with the game. If a taken press turns out to be a hold or hits a
+  gate at release, `Attack::NormalAttack` hands the swing back.
 - The tests in `tests/` cover exactly those three pure headers (`Chord`, `Binds`, `Selection`) and are the
   reason they are engine-free: `cmake --build build/vs2022 --target spa_ChordTests spa_BindsTests
   spa_SelectionTests`, or `ctest --test-dir build/vs2022 --output-on-failure`.
