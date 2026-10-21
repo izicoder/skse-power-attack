@@ -3,11 +3,11 @@
 Where the plugin stands, what came in from the Nexus page, and what is worth doing next. Kept short on
 purpose: the whole point of this mod is that it stays one tap and one DLL.
 
-Checked 21 Oct 2026, with `0.2.1` live.
+Checked 21 Oct 2026, with `0.3.0` live.
 
 ## Where it stands
 
-- Live on Nexus (`196152`) and GitHub (`izicoder/skse-power-attack`), version `0.2.1`.
+- Live on Nexus (`196152`) and GitHub (`izicoder/skse-power-attack`), version `0.3.0`.
 - Feature-complete for the original idea: tap a key, get a vanilla right-hand power attack, plus the
   jump/block fallback, the empty-stamina toggle, an optional modifier and the SKSE Menu Framework tab.
 - Untested surface: only 1.6.1170 was ever played. No VR support by design (Address Library, SE/AE only).
@@ -20,7 +20,7 @@ Three comments since release, none of them a bug report:
 | Comment | Verdict |
 |---|---|
 | "why is it called vibe coded if everyone hates it" + "you get to vibe while the ai codes" | No action. Page text and the AI disclosure stay as they are. |
-| "Could you vibe code a mod for dual wield power attacks next" | Shipped in the next release, without a setting: the plugin now picks the hand from what you hold, so two weapons get the vanilla two-weapon power attack. |
+| "Could you vibe code a mod for dual wield power attacks next" | Shipped in `0.3.0` as the Dual wield row (plus an optional fallback that turns the left and right rows into it while both hands hold one-handers). Answered on the page. |
 
 ## Done since 0.2.1
 
@@ -42,10 +42,13 @@ Three comments since release, none of them a bug report:
 - **Modifiers read from the whole input batch first** (`src/Input.cpp`): Ctrl and Alt pressed in the same poll as
   the chord key were dispatched after it, which made those two chords miss about half the time. Shift usually
   arrives first, which is why it looked fine.
-- **Chords that name a modifier take their press, and so does the game's attack key** (`src/Input.cpp`): the sink
-  answers `kStop` while a row owns the press, so Shift + right mouse no longer blocks and a bound left mouse no
-  longer swings twice. A hold of a taken press is handed back as the row's normal attack. Untested in play - see
-  "Next".
+- **Chords that name a modifier take their press, and so does the game's attack key** (`src/Input.cpp`): the press
+  is blanked in place, never cut with `kStop` (dropping the batch swallowed releases, and a swallowed release kept
+  a shield up). A hold of a taken press is handed back as the row's normal attack.
+- **Nothing is submitted while a block is up** (`src/Attack.cpp`): the engine only bashes from a block, and an
+  attack submitted behind its back left a shield or torch up for good. A shield hand tap is now plain vanilla
+  block. `submitWhileBlocking` (off, menu checkbox, "you almost certainly never want this") brings the old path
+  back for anyone who wants to fight the engine.
 
 ## Next
 
@@ -54,10 +57,9 @@ Nothing here is promised; each item is only worth doing if the idea survives bei
 1. **Bug reports first.** Nobody has posted a crash, a log or a "does nothing" yet. If one arrives, it outranks
    everything below. Collect version, SKSE log, game version.
 2. **Verify the cancel in play.** Bind Left Mouse, tap it: exactly one power attack and no normal swing first.
-   Hold it: one normal swing when you let go. `input: game attack key: mouse=256 ...` in the log says whether the
-   control map reports the same numbering as the input events; if a tap still double-fires, the sink's `kStop` is
-   not honoured and the only other route is a hook on the attack handler, which breaks the "no hooks" promise,
-   so ask first.
+   Hold it: one normal swing when you let go. A double swing means the game's own handler runs before the sink can
+   blank the press; the only other route is a hook on the attack handler, which breaks the "no hooks" promise, so
+   ask first.
 3. **Wider runtime check.** `0.2.1` was built and played on 1.6.1170. Confirming it loads on the other common
    AE runtimes and on SE 1.5.97 costs a DLL load and one tap each, and it is the cheapest way to stop the
    "requires Address Library" footnote turning into a support thread.
