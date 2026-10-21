@@ -10,34 +10,40 @@ you bound.
 
 ## The rules
 
-1. **Three keys, three attacks.** Right hand, left hand, dual wield. A key fires only the row it is bound to: there
-   is no automatic weapon detection, so what comes out never depends on what you happen to hold.
-2. **Tap, not hold.** The attack fires when the key is *released*, and only if the press was shorter than the tap
+1. **Three keys, three attacks.** Right hand, left hand, dual wield. A key fires the row it is bound to. Nothing is
+   detected from your gear, with one optional exception: the next rule.
+2. **Dual-wield fallback (on by default).** While the Dual wield row has *no key*, holding a one-handed weapon in
+   each hand makes the left and right keys swing the two-weapon attack instead of their own hand. Two separate
+   guards turn it off: put any key on Dual wield, or untick the checkbox in the menu. Fists and two-handed weapons
+   do not count as dual wielding, so this never fires with an empty or two-handed hand.
+3. **Tap, not hold.** The attack fires when the key is *released*, and only if the press was shorter than the tap
    window (200 ms by default). Holding a key you bound does nothing, which is why it is safe next to sprint or
    jump.
-3. **Modifiers.** Hold Shift, Ctrl or Alt (either side of the keyboard) *first*, then press the key: both are
+4. **Modifiers.** Hold Shift, Ctrl or Alt (either side of the keyboard) *first*, then press the key: both are
    stored in that row, e.g. `Shift + Mouse 5`. Extra modifiers you did not name are ignored, so sprinting with Alt
    held never blocks a plain `Mouse 5`.
-4. **Two rows, one chord.** A chord that names modifiers beats a bare chord on the same key, and two rows with
+5. **Two rows, one chord.** A chord that names modifiers beats a bare chord on the same key, and two rows with
    the exact same chord resolve to the one higher in the menu. Nothing is stolen when you rebind.
-5. **The game's own attack key is taken over.** If a row uses the key the game attacks with (left mouse by
+6. **The game's own attack key is taken over.** If a row uses the key the game attacks with (left mouse by
    default), the plugin keeps that press away from the game, so a tap gives *only* the power attack instead of a
    normal swing plus a power attack. Let the same key go after the tap window and the press is handed back as the
    normal attack — holding the button still swings.
-6. **Any other key is left alone.** A key the game does not attack with (mouse 4/5, an unused letter) keeps
+7. **Any other key is left alone.** A key the game does not attack with (mouse 4/5, an unused letter) keeps
    whatever it did before; there is nothing to cancel.
-7. **Jumping or blocking.** The engine eats the power attack action in those two states, so the plugin performs
+8. **Jumping or blocking.** The engine eats the power attack action in those two states, so the plugin performs
    the normal attack of the same row first and the power attack 200 ms later.
-8. **Never a power attack:** bows, crossbows and staves equipped; on a horse; in a killmove; sitting or
+9. **Never a power attack:** bows, crossbows and staves equipped; on a horse; in a killmove; sitting or
    sleeping; paused game; dialogue. The press is not taken in those cases either, so the bow still fires.
-9. **Empty stamina** is allowed by default (for mods that let you power attack at 0 stamina); one checkbox turns
-   that off.
-10. **No key in a row = that row does nothing.** Every row can be cleared, including the right hand.
+10. **Empty stamina** is allowed by default (for mods that let you power attack at 0 stamina); one checkbox turns
+    that off.
+11. **No key in a row = that row does nothing.** Every row can be cleared, including the right hand.
 
 ## Features
 
 - Chords: hold Shift, Ctrl or Alt while pressing a key to bind `Shift + Mouse 5`, `Ctrl + E`, whatever.
 - Three power attack rows: right hand, left hand, dual wield. Bind one, or all three.
+- Optional dual-wield fallback: one key for everything while both hands hold a one-handed weapon, back off the
+  moment you bind a key on Dual wield or untick the box.
 - Every tap submits the matching vanilla action (the game has a full set: `0x13383` right, `0x2E2F6` left,
   `0x2E2F7` dual), so combos, stamina costs, perks and animations all behave exactly like a real power attack.
 - **Settings tab** in [SKSE Menu Framework](https://www.nexusmods.com/skyrimspecialedition/mods/120352) with
@@ -58,6 +64,7 @@ on first run:
 	},
 	"tapWindowMs": 200,
 	"allowZeroStamina": true,
+	"dualFallback": true,
 	"logging": true,
 	"version": 3
 }
@@ -70,6 +77,7 @@ on first run:
 | `binds.left` / `binds.dual` | `-1` | the other two rows, same shape; both unbound by default |
 | `tapWindowMs` | `200` | press *and* release inside this many ms, otherwise nothing happens (20–1000) |
 | `allowZeroStamina` | `true` | allow the tap with an empty stamina bar |
+| `dualFallback` | `true` | left and right rows do the two-weapon attack while dual wielding and the dual row has no key |
 | `logging` | `true` | write `SKSEPowerAttack.log` |
 | `version` | `3` | format of the file; written by the plugin, do not edit |
 

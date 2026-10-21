@@ -106,6 +106,11 @@ normal swing) and hold it (one normal swing on release).
   set for all three, which is what makes three rows possible. An earlier draft shipped a `powerAttack:
   right|left|dual` setting, and a later one detected the hand from equipped weapons; both were rejected in
   favour of rows ("fists counted as weapons", so detection lied about empty hands). Do not bring either back.
+- **Dual-wield fallback, two guards.** `Selection::WithDualFallback` (unit tested) turns a left or right row into
+  the two-weapon attack when both hands hold a one-handed weapon. Armed only while `Settings::dualFallback` is on
+  AND the dual row has no key, so a key on dual or an unticked box both kill it. `Attack::OneHandedWeapon` is the
+  only code that reads equipped gear now and is only called while the fallback is armed: fists are not weapon
+  forms and two-handers are excluded by `WEAPON_TYPE`, which is what went wrong with the old auto row.
 - **A bind is a chord** (`src/Chord.h`): key + `Chord::Mods` mask (shift 1, ctrl 2, alt 4), both left and right
   modifier scan codes map to the same bit. A modifier can never be a chord's key, and extra held modifiers are
   tolerated so sprinting does not block a bare chord.

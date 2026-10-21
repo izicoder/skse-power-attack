@@ -155,7 +155,7 @@ namespace SPA::UI
 
 			// Right after the button, before Cancel becomes "the last item".
 			if (ImGui::IsItemHovered()) {
-				ImGui::SetTooltip("Mouse 5 on auto, the right, left and dual boxes unbound, power attacks at 0 stamina, logging on.");
+				ImGui::SetTooltip("Mouse 5 on the right hand, left and dual unbound, dual-wield fallback on, power attacks at 0 stamina, logging on.");
 			}
 
 			// Re-read: a confirmed reset above just cleared it, so Cancel must not linger.
@@ -185,6 +185,17 @@ namespace SPA::UI
 				"Swings the vanilla left-hand power attack.");
 			RenderBind("Dual wield", settings.binds[Binds::Index(Binds::Slot::kDual)], Binds::Slot::kDual,
 				"Swings the vanilla two-weapon power attack. It needs a one-handed weapon in each hand to land.");
+
+			ImGui::Spacing();
+			if (ImGui::Checkbox("Left and right keys also do the dual-wield attack", &settings.dualFallback)) {
+				PA("ui: dualFallback -> {}", settings.dualFallback);
+				Config::Touch();
+				SaveNow("dual-wield fallback changed");
+			}
+			ImGui::Indent();
+			Body("Only while Dual wield has no key. With a one-handed weapon in each hand, the left and right keys then swing the two-weapon power attack instead of their own hand.");
+			Body("Put a key on Dual wield, or untick this, and every key swings exactly its own hand.");
+			ImGui::Unindent();
 
 			ImGui::Spacing();
 			Body("Tap a key: press it, let go within the tap window below, and the power attack fires. Hold it longer and nothing happens.");

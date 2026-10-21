@@ -29,6 +29,18 @@ namespace SPA::Selection
 		return Choice::kRight;
 	}
 
+	// The optional dual-wield fallback: with a one-handed weapon in each hand, the left and right
+	// rows fire the two-weapon attack instead of their own hand. Only while it is armed, which the
+	// caller decides from the setting and from the dual row having no key. Pure, so the rule is
+	// unit tested and the engine side only has to answer "what is in each hand".
+	constexpr Choice WithDualFallback(Choice a_choice, bool a_armed, bool a_oneHandedRight, bool a_oneHandedLeft) noexcept
+	{
+		if (!a_armed || a_choice == Choice::kDual) {
+			return a_choice;
+		}
+		return (a_oneHandedRight && a_oneHandedLeft) ? Choice::kDual : a_choice;
+	}
+
 	constexpr const char* Name(Choice a_choice) noexcept
 	{
 		switch (a_choice) {

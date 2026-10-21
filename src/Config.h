@@ -33,9 +33,10 @@ namespace SPA
 			Chord::Bind{},                             // left
 			Chord::Bind{},                             // dual
 		};
-		int  tapWindowMs{ 200 };       // press AND release inside this window, otherwise nothing happens
+		int  tapWindowMs{ 200 };        // press AND release inside this window, otherwise nothing happens
 		bool allowZeroStamina{ true };  // power attack with an empty stamina bar (0 stamina mods)
-		bool logging{ true };          // write SKSEPowerAttack.log
+		bool dualFallback{ true };      // left/right rows fire the two-weapon attack when dual wielding
+		bool logging{ true };           // write SKSEPowerAttack.log
 	};
 
 	class Config

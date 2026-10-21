@@ -31,6 +31,9 @@ Three comments since release, none of them a bug report:
 - **Three power attack rows** (`src/Binds.h`, `src/Selection.h`): right, left, dual. The row decides the action,
   a plain switch, no weapon detection. Every row can be cleared; the old `leftHotkey` became the left row and the
   old auto row became the right one on upgrade.
+- **Dual-wield fallback** (`Selection::WithDualFallback`, `Settings::dualFallback`, on by default): while the dual
+  row has no key, a one-handed weapon in each hand makes the left and right rows fire the two-weapon attack, which
+  is what the removed auto row used to give dual wielders. Two guards: a key on the dual row, or the menu toggle.
 - **Chords** (`src/Chord.h`): a bind is a key plus Shift/Ctrl/Alt, either side. A chord that names a modifier
   beats a bare chord on the same key, and an exact duplicate goes to the row higher in the menu, so rebinding
   never needs a fight. Config format 3, one migration step per jump (`hotkey`/`leftHotkey`/`modifierKey` -> 2,

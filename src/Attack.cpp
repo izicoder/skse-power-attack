@@ -53,10 +53,31 @@ namespace SPA::Attack
 			const char*    name;
 		};
 
-		// The row names the action and nothing else is consulted (Selection::ForSlot, unit tested).
-		Pick Resolve(Binds::Slot a_slot)
+		// One-handed weapon in that hand. Fists are not weapon forms and a two-hander is not a dual
+		// wield, so only the four one-handed kinds count.
+		bool OneHandedWeapon(RE::Actor* a_actor, bool a_leftHand)
 		{
-			const auto choice = Selection::ForSlot(a_slot);
+			auto* form = a_actor->GetEquippedObject(a_leftHand);
+			auto* weapon = form ? form->As<RE::TESObjectWEAP>() : nullptr;
+			if (!weapon) {
+				return false;
+			}
+			const auto type = weapon->GetWeaponType();
+			return type >= RE::WEAPON_TYPE::kOneHandSword && type <= RE::WEAPON_TYPE::kOneHandMace;
+		}
+
+		// The row names the action and nothing else is consulted (Selection::ForSlot, unit tested),
+		// except the optional dual-wield fallback, which needs to know what the hands hold.
+		Pick Resolve(RE::Actor* a_actor, Binds::Slot a_slot)
+		{
+			auto choice = Selection::ForSlot(a_slot);
+
+			const auto& settings = Config::Cached();
+			const bool  armed = settings.dualFallback &&
+				!settings.binds[Binds::Index(Binds::Slot::kDual)].IsBound();
+			if (armed) {
+				choice = Selection::WithDualFallback(choice, true, OneHandedWeapon(a_actor, false), OneHandedWeapon(a_actor, true));
+			}
 			return { For(choice), Selection::Describe(choice) };
 		}
 
@@ -182,7 +203,7 @@ namespace SPA::Attack
 			return;
 		}
 
-		const auto pick = Resolve(a_slot);
+		const auto pick = Resolve(player, a_slot);
 		if (!pick.actions.power) {
 			PAE("attack: no {} action resolved, ignoring the tap", pick.name);
 			return;
@@ -211,7 +232,7 @@ namespace SPA::Attack
 			return;
 		}
 
-		const auto pick = Resolve(a_slot);
+		const auto pick = Resolve(player, a_slot);
 		if (!pick.actions.attack) {
 			PAE("attack: no {} normal action resolved, ignoring it", pick.name);
 			return;

@@ -46,6 +46,20 @@ int main()
 	static_assert(Binds::Index(Binds::Slot::kLeft) == 1);
 	static_assert(Binds::Index(Binds::Slot::kDual) == 2);
 
+	// The dual-wield fallback: only while armed, only for the left and right rows, and only with a
+	// one-handed weapon in each hand. "Armed" is the caller's answer to the setting plus "the dual
+	// row has no key".
+	{
+		using Selection::WithDualFallback;
+		Expect("both hands armed", Selection::Choice::kDual, WithDualFallback(Selection::Choice::kRight, true, true, true));
+		Expect("left row, both hands", Selection::Choice::kDual, WithDualFallback(Selection::Choice::kLeft, true, true, true));
+		Expect("disarmed keeps the right row", Selection::Choice::kRight, WithDualFallback(Selection::Choice::kRight, false, true, true));
+		Expect("right hand empty keeps the row", Selection::Choice::kRight, WithDualFallback(Selection::Choice::kRight, true, true, false));
+		Expect("left hand empty keeps the row", Selection::Choice::kLeft, WithDualFallback(Selection::Choice::kLeft, true, false, true));
+		Expect("both hands empty keeps the row", Selection::Choice::kRight, WithDualFallback(Selection::Choice::kRight, true, false, false));
+		Expect("dual row is untouched", Selection::Choice::kDual, WithDualFallback(Selection::Choice::kDual, true, false, false));
+	}
+
 	// Labels: the log and the menu read these, so a typo is a user-visible bug.
 	ExpectText("right name", "right", Selection::Name(Selection::Choice::kRight));
 	ExpectText("left name", "left", Selection::Name(Selection::Choice::kLeft));
