@@ -199,7 +199,6 @@ namespace SPA
 						return RE::BSEventNotifyControl::kContinue;
 					}
 
-					bool        taken = false;
 					const auto& settings = Config::Cached();
 					try {
 						// Modifiers first, over the whole batch: Ctrl or Alt pressed in the same poll
@@ -265,7 +264,16 @@ namespace SPA
 								tap.code.store(code, std::memory_order_release);
 								tap.taken.store(take, std::memory_order_release);
 								tap.pressTicks.store(Now(), std::memory_order_release);
-								taken |= take;
+
+								// A press meant for us is blanked in place instead of being answered
+								// with kStop: kStop drops the whole batch, and a release in that same
+								// batch (a shield, a block, a movement key) would never reach the
+								// engine - a swallowed release keeps its held state latched, which is
+								// the stuck shield. Blanking the value leaves the event lists intact
+								// for the other sinks: the game sees this button as already released.
+								if (take) {
+									button->GetRuntimeData().value = 0.0f;
+								}
 
 								PAI("input: '{}' down ({} row, modifiers 0x{:X}){}: release within {} ms to power attack",
 									Keys::DescribeChord(bind), Binds::Name(*slot), held,
@@ -343,13 +351,10 @@ namespace SPA
 						PAE("input: sink threw a non-std exception");
 					}
 
-					// kStop is how a matched chord keeps its press away from the game: without it a
-					// modified click blocks, or a bound attack key swings twice. Only presses are
-					// ever taken - releases must reach the game, or a held button state (block)
-					// stays latched. Whether the engine honours kStop for its own handling is
-					// unverified - look for ", the game does not get this press" on the down line
-					// when a tap still does the vanilla thing too.
-					return taken ? RE::BSEventNotifyControl::kStop : RE::BSEventNotifyControl::kContinue;
+					// Never kStop: it stops the whole batch for every later sink, and swallowing a
+					// release is what left a shield up until the next key press. A taken press is
+					// blanked in place above, so only that button is hidden from the game.
+					return RE::BSEventNotifyControl::kContinue;
 				}
 			};
 

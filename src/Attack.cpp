@@ -25,7 +25,7 @@ namespace SPA::Attack
 		// looks at what the player is holding.
 		struct Actions
 		{
-			RE::BGSAction* attack{ nullptr };  // normal attack, only the jump/block fallback uses it
+			RE::BGSAction* attack{ nullptr };  // normal attack, only the jumping fallback uses it
 			RE::BGSAction* power{ nullptr };
 		};
 
@@ -110,9 +110,19 @@ namespace SPA::Attack
 			});
 		}
 
-		// Jumping and blocking both eat the power attack action, so those two cases get the
-		// normal attack of the same hand first and the power attack a moment later. The short
-		// wait leaves the normal attack's window before the power attack lands.
+		// Blocking is not a power attack state at all: the engine only bashes from it, and an
+		// attack submitted behind its back left the shield (or torch) up for good. So a tap while
+		// blocking submits nothing - the press started that block, the game finishes it.
+		bool IsBlocking(RE::Actor* a_actor)
+		{
+			bool blocking = false;
+			a_actor->GetGraphVariableBool("IsBlocking", blocking);
+			return blocking;
+		}
+
+		// Jumping eats the power attack action, so it gets the normal attack of the same hand
+		// first and the power attack a moment later. The short wait leaves the normal attack's
+		// window before the power attack lands.
 		//
 		// The wait is a chain of main-thread tasks, not a thread: a task checks the clock and
 		// re-posts itself until the delay is up. The plugin therefore starts no threads at all,
@@ -136,7 +146,7 @@ namespace SPA::Attack
 						ScheduleDelayedPowerAttack(a_actor, a_powerAttack, a_generation, a_due);  // next frame
 						return;
 					}
-					PerformAction(a_powerAttack, a_actor, "tap (after the jump/block attack)");
+					PerformAction(a_powerAttack, a_actor, "tap (after the jumping attack)");
 				} catch (const std::exception& e) {
 					PAE("attack: the delayed power attack threw: {}", e.what());
 				} catch (...) {
@@ -210,13 +220,17 @@ namespace SPA::Attack
 		}
 
 		bool isJumping = false;
-		bool isBlocking = false;
 		player->GetGraphVariableBool("bInJumpState", isJumping);
-		player->GetGraphVariableBool("IsBlocking", isBlocking);
+		const bool isBlocking = IsBlocking(player);
 		PA("attack: {} (jumping={} blocking={}) -> {}", a_reason, isJumping, isBlocking, pick.name);
 
-		if (isJumping || isBlocking) {
-			PerformAction(pick.actions.attack, player, "tap while jumping/blocking, normal attack first");
+		if (isBlocking) {
+			PA("attack: blocking, nothing submitted (a shield or torch bashes through the game)");
+			return;
+		}
+
+		if (isJumping) {
+			PerformAction(pick.actions.attack, player, "tap while jumping, normal attack first");
 			DelayedPowerAttack(player, pick.actions.power);
 			return;
 		}
@@ -235,6 +249,13 @@ namespace SPA::Attack
 		const auto pick = Resolve(player, a_slot);
 		if (!pick.actions.attack) {
 			PAE("attack: no {} normal action resolved, ignoring it", pick.name);
+			return;
+		}
+
+		// Same reason as the tap: the engine owns attacks from a block, and one submitted
+		// underneath it leaves the shield up.
+		if (IsBlocking(player)) {
+			PA("attack: {} while blocking, nothing submitted", a_reason);
 			return;
 		}
 

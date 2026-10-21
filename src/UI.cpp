@@ -203,7 +203,8 @@ namespace SPA::UI
 			Body("Same key on two rows? The row higher up wins.");
 			Body("You can even use the game's own attack button. A quick tap is then only the power attack, no normal swing.");
 			ImGui::Spacing();
-			Body("Jumping or blocking when you tap? The game throws the power attack away, so the plugin swings normally first and power attacks a moment later.");
+			Body("Jumping when you tap? The game throws the power attack away, so the plugin swings normally first and power attacks a moment later.");
+			Body("Blocking? Nothing happens. A shield or a torch has no power attack in this game, only a bash, so the plugin keeps out of it.");
 			Body("Nothing happens at all with a bow, crossbow or staff out, on a horse, mid killmove, sitting, in dialogue, or with the game paused. The key keeps its normal job there.");
 
 			ImGui::Spacing();

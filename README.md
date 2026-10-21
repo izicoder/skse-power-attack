@@ -21,14 +21,16 @@ no MCM quest: a pure SKSE plugin that submits the vanilla power attack action of
    Extra modifiers do not matter: sprinting with Alt held never breaks a plain `Mouse 5`.
 5. **The same chord on two rows.** The one with modifiers wins, and if both are identical the row higher in the list
    wins. Rebinding never fights you.
-6. **A key with a modifier belongs to the plugin.** The game knows nothing about modifiers, so Shift + right mouse
-   does not block, Shift + E does not loot, Shift + Space does not jump. Keep it held past the tap window and you get
-   that row's normal swing when you let go.
+6. **A key with a modifier belongs to the plugin.** The game knows nothing about modifiers, so Shift + E does not
+   loot, Shift + Space does not jump, and a Shift + click never swings on its own. Keep it held past the tap window
+   and you get that row's normal swing when you let go. The one thing it cannot cancel is the game's block: a shield
+   or torch still goes up while you hold that click, and comes down when you let go.
 7. **A key without a modifier keeps its day job.** Mouse 4/5 and unused letters are untouched. One exception: the
    game's attack button (left mouse by default) is taken over, so a tap power attacks without a normal swing first.
    Hold that one and you get the normal swing.
-8. **Jumping or blocking?** The game drops a power attack there, so you swing normally first and the power attack
-   comes 200 ms later.
+8. **Jumping:** the game drops a power attack midair, so you swing normally first and the power attack follows
+   200 ms later. **Blocking:** nothing. A shield or torch has no power attack in this game, only a bash, so while a
+   block is up the plugin submits nothing and the block stays the game's.
 9. **Nothing happens at all** with a bow, crossbow or staff out, on a horse, mid killmove, sitting, in dialogue, or
    with the game paused. The key keeps its normal job there, so a drawn bow still fires.
 10. **Empty stamina** still power attacks by default, for mods that allow it at 0 stamina. One checkbox turns that off.
@@ -119,7 +121,7 @@ imported once on first run, then left untouched.
   a key bound to a chord with a modifier, and for the game's own attack key whenever a row owns it (rule 6 and 7
   above). Every other event reaches the game unchanged, so the game and every other mod see exactly what they
   would without it.
-- **No threads.** The 200 ms jump/block fallback is a chain of main-thread tasks, not a worker thread.
+- **No threads.** The 200 ms jumping fallback is a chain of main-thread tasks, not a worker thread.
 - **Menu optional.** With SKSE Menu Framework installed there is a settings tab; without it the menu is skipped
   and the JSON still applies.
 - **Animation mods** (MCO/ADXP, Valhalla, Vanargand, ...) work because the vanilla action is submitted instead of

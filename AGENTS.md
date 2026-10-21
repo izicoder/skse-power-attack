@@ -24,7 +24,7 @@ else is passed on untouched.
 | `src/Chord.h` | What a bind is, engine-free: a key plus a Shift/Ctrl/Alt mask, the scan codes of the modifiers, matching and the label prefix. Unit tested. |
 | `src/Binds.h` | The three rows in menu order (`kRight`, `kLeft`, `kDual`), engine-free, and `Resolve()`: which row a press belongs to. Unit tested. |
 | `src/Selection.h` | The tap decision, engine-free: `ForSlot()` maps a row to its vanilla action and nothing else. Unit tested. |
-| `src/Attack.h/.cpp` | Resolves all six vanilla attack/power-attack actions, submits them through the task interface, jump/block fallback as a task chain (no threads). `PowerAttack` and the `NormalAttack` hand-back. |
+| `src/Attack.h/.cpp` | Resolves all six vanilla attack/power-attack actions, submits them through the task interface, the jumping fallback as a task chain (no threads), nothing at all while blocking. `PowerAttack` and the `NormalAttack` hand-back. |
 | `src/Input.h/.cpp` | Key encoding (SKSE InputMap numbering), labels including `Keys::DescribeChord`, the tap sink (modifiers over the whole batch first, then three tap slots, press + release inside the window), its gates, the cancel, the menu-open sink. |
 | `tests/` | `ChordTests.cpp`, `BindsTests.cpp`, `SelectionTests.cpp`: plain `main()`, no framework, no engine. |
 | `src/UI.h/.cpp` | SKSE Menu Framework tab: three chord rows with chord capture, toggles, two-click reset. |
@@ -119,21 +119,28 @@ normal swing) and hold it (one normal swing on release).
   key can be dispatched after it (Shift usually arrives first, which is why only Ctrl and Alt looked unreliable).
   Do not switch to `BSInputDevice::IsPressed` for this: `GetKeyboard()` drags `BSWin32KeyboardDevice` into the
   link and the prebuilt CommonLibSSE bundle leaves those vtables unresolved (`LNK2001`).
-- **A matched chord owns its press, and so does the game's attack key.** The sink answers `kStop` for a press
-  whose matched chord names a modifier (vanilla ignores modifiers, so its unmodified action is not what the player
-  asked for: Shift + right mouse must not block, Shift + E must not loot) and for the game's attack key even on a
-  bare chord (`Input::IsGameAttackKey`, the control map's `"Attack"` event id), which is what stops a tap from
-  swinging twice. A gate at press leaves the press with the game. If a taken press turns out to be a hold or hits a
-  gate at release, `Attack::NormalAttack` hands the swing back. Only the press is ever taken: the release always
-  reaches the game, because the engine latches block on its own held-button state and a swallowed release left the
-  shield up until the next key press.
+- **A matched chord owns its press, and so does the game's attack key.** A taken press is blanked in place
+  (`button->value = 0`), never cut with `kStop`, for a press whose matched chord names a modifier (vanilla ignores
+  modifiers, so its unmodified action is not what the player asked for: Shift + E must not loot) and for the game's
+  attack key even on a bare chord (`Input::IsGameAttackKey`, the control map's `"Attack"` event id), which is what
+  stops a tap from swinging twice. A gate at press leaves the press with the game. If a taken press turns out to be
+  a hold or hits a gate at release, `Attack::NormalAttack` hands the swing back. `kStop` is never returned: it drops
+  the whole batch, releases included, and a swallowed release latches a held state.
+- **Blocking is not a tap state: nothing is submitted while `IsBlocking`.** The engine only bashes from a block, and
+  a shield or torch has no power attack at all, so `Attack::PowerAttack` and `Attack::NormalAttack` both log and
+  return. The press still raises the block (the game reads its own held-button state, so blanking the event does not
+  stop it) and the release lowers it. An attack submitted behind the engine's back there is what left a shield up for
+  good - do not bring back the old normal-then-power fallback for blocks. Jumping keeps that fallback; it is safe.
+- **What a hand can attack with is the engine's call, not a list.** There is no "can attack" record flag: `BGSAction`
+  is a keyword plus an index, a torch is a `TESObjectLIGH` (bash only, like a shield), and modded items are unknown.
+  So `ProcessAction` returning `performed=false` is the only abort, and it is final - never add a fallback on it.
 - The tests in `tests/` cover exactly those three pure headers (`Chord`, `Binds`, `Selection`) and are the
   reason they are engine-free: `cmake --build build/vs2022 --target spa_ChordTests spa_BindsTests
   spa_SelectionTests`, or `ctest --test-dir build/vs2022 --output-on-failure`.
 - Defaults are Shift + left mouse on the right row, Shift + right mouse on the left row, mouse button 5 on dual,
   dual-wield fallback off (`Config.h` `kDefaultRight` / `kDefaultLeft` / `kDefaultDual`). Every row can be cleared -
   the menu is the only way to unbind, so it has to be able to.
-- The jump/block fallback is 200 ms of re-posting tasks, never a thread.
+- The jump fallback is 200 ms of re-posting tasks, never a thread. Blocking has no fallback at all.
 - No attribution to any other power-attack mod anywhere (README, page, comments); it was removed on request,
   do not re-add it.
 - Key codes are SKSE InputMap numbers as-is. Do not invent an offset.
@@ -158,10 +165,11 @@ normal swing) and hold it (one normal swing on release).
   `auto`) is migrated in place: format 1 becomes the format 2 shape first, then `binds.auto` moves to
   `binds.right` when that row is free (dropped, with a warning, when it is not). The left row is a plain left
   power attack now - the old format 1 second key used to give the dual attack while dual-wielding.
-- `kStop` from the input sink is the only cancel and it is unverified: whether the game honours it for its own
-  attack handling depends on where its sink sits in the list. If a tap on a bound attack key still double-fires,
-  the down line will say the press was taken and the attack happened anyway, and a hook on the attack handler is
-  the only other route (ask before adding one).
+- The input sink never returns `kStop`. It used to, and it cost a shield that stayed up: a drop takes the whole
+  batch, releases included. Taking a press means blanking its value, which the game's own attack handling respects
+  but its held-button state does not - a press on the block key still raises the block. That is why the shield case
+  is answered in `Attack.cpp` (submit nothing while blocking), not in the sink. A hook is still the only way to stop
+  the engine's own block; ask before adding one.
 - In the menu, a capture ends on the first non-modifier key press; modifiers only update the preview, and Escape
   cancels. That is what makes `Shift + Mouse 5` bindable - do not "fix" it by ending the capture on a modifier.
 - Publishing to GitHub refuses with "HEAD (...) is not pushed to its upstream branch": push first, the release
