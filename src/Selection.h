@@ -1,16 +1,13 @@
 #pragma once
 
+#include "Binds.h"
+
 // The tap decision, kept free of the game so it can be unit tested (tests/SelectionTests.cpp):
-// given what the player holds and which key was tapped, which power attack goes out.
+// given the four boxes and what the player holds, which power attack goes out.
 //
 // Vanilla keeps one action per hand and a third for the two-weapon spin, so this is a choice
-// between three actions, not a setting:
-//   both hands hold a weapon -> dual (ActionDualPowerAttack)
-//   one hand holds a weapon  -> that hand (ActionRightPowerAttack / ActionLeftPowerAttack)
-//   no weapon at all         -> the key's own hand (unarmed/beast form still attacks)
-//
-// The second key is a mirror of the first, not a second rule: same table, left and right
-// swapped, which only changes the empty-handed case.
+// between three actions. The auto box picks from the equipment; right, left and dual are what
+// the player bound them to, whether or not the hands could do it (the engine decides that).
 
 namespace SPA::Selection
 {
@@ -20,19 +17,6 @@ namespace SPA::Selection
 		kLeft = 1,
 		kDual = 2,
 	};
-
-	// Which of the two binds was tapped.
-	enum class Key
-	{
-		kMain,
-		kLeft,
-	};
-
-	// The hand a key attacks with when there is nothing to choose from.
-	constexpr Choice FallbackForKey(Key a_key) noexcept
-	{
-		return a_key == Key::kLeft ? Choice::kLeft : Choice::kRight;
-	}
 
 	constexpr Choice Choose(bool a_rightWeapon, bool a_leftWeapon, Choice a_fallback) noexcept
 	{
@@ -46,6 +30,19 @@ namespace SPA::Selection
 			return Choice::kLeft;
 		}
 		return a_fallback;
+	}
+
+	// Which action a box fires. Only the auto box looks at the hands; with nothing equipped it
+	// swings right, because the auto box is the one bound by default.
+	constexpr Choice ForSlot(Binds::Slot a_slot, bool a_rightWeapon, bool a_leftWeapon) noexcept
+	{
+		switch (a_slot) {
+		case Binds::Slot::kAuto: return Choose(a_rightWeapon, a_leftWeapon, Choice::kRight);
+		case Binds::Slot::kRight: return Choice::kRight;
+		case Binds::Slot::kLeft: return Choice::kLeft;
+		case Binds::Slot::kDual: return Choice::kDual;
+		}
+		return Choice::kRight;
 	}
 
 	constexpr const char* Name(Choice a_choice) noexcept

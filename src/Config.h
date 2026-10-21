@@ -10,8 +10,8 @@ namespace SPA
 	//   256..263  mouse button (256 = left, 257 = right, 258 = middle, ...)
 	//   266..281  gamepad button (dpad, start/back, sticks, shoulders, A/B/X/Y, LT/RT)
 	// which is SKSE's own numbering, so a hand-copied value still means the same key.
-	// Defined once, in Binds.h, so the bind rules and the settings share it.
-	constexpr int kNoKey = Binds::kNoKey;
+	// Defined once, in Chord.h, so the bind rules and the settings share it.
+	constexpr int kNoKey = Chord::kNoKey;
 	constexpr int kMaxKeyCode = 281;
 
 	// Tap window bounds in milliseconds, shared by the setting, its validation and the menu
@@ -21,9 +21,15 @@ namespace SPA
 
 	struct Settings
 	{
-		int  hotkey{ 260 };            // tap this to power attack (260 = mouse button 5)
-		int  leftHotkey{ kNoKey };     // optional second key: same detection, left-hand fallback
-		int  modifierKey{ kNoKey };    // optional: hotkey only counts while this is held
+		// The four power attack keys in menu order (Binds::Slot). Auto is the one bound out of
+		// the box: mouse button 5, no modifier. A key is a chord, so the modifier travels with
+		// it instead of being one global setting.
+		Binds::BindList binds{
+			Chord::Bind{ 260, Chord::kNone },  // auto
+			Chord::Bind{},                     // right
+			Chord::Bind{},                     // left
+			Chord::Bind{},                     // dual
+		};
 		int  tapWindowMs{ 200 };       // press AND release inside this window, otherwise nothing happens
 		bool allowZeroStamina{ true };  // power attack with an empty stamina bar (0 stamina mods)
 		bool logging{ true };          // write SKSEPowerAttack.log

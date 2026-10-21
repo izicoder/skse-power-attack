@@ -13,15 +13,11 @@ namespace SPA::UI
 {
 	namespace
 	{
-		enum class Bind
-		{
-			kNone,
-			kHotkey,
-			kLeftHotkey,
-			kModifier
-		};
-
-		std::atomic<Bind> s_capture{ Bind::kNone };
+		// -1 = no capture running, otherwise the index into Settings::binds. The modifiers pressed
+		// during a capture live here so the row can show "listening for Shift + ..." while the
+		// user is still holding the modifier down.
+		std::atomic<int>      s_captureSlot{ -1 };
+		std::atomic<unsigned> s_captureMods{ Chord::kNone };
 		std::atomic<int>  renderFrames{ 0 };
 
 		constexpr ImGui::ImVec4 kValueColor{ 0.80f, 0.90f, 1.00f, 1.0f };
@@ -63,44 +59,45 @@ namespace SPA::UI
 			ImGui::TextWrapped("%s", a_text);
 		}
 
-		void BeginCapture(Bind a_target)
+		void BeginCapture(Binds::Slot a_slot)
 		{
-			if (s_capture.exchange(a_target) == Bind::kNone) {
-				PAI("ui: waiting for a new key (target={})", static_cast<int>(a_target));
+			// Seeded from the sink's own mask: a modifier already held when the button is clicked
+			// belongs to the chord, and its press happened before the capture began.
+			const auto held = Input::HeldMods();
+			s_captureMods.store(held, std::memory_order_release);
+			if (s_captureSlot.exchange(static_cast<int>(Binds::Index(a_slot))) < 0) {
+				PAI("ui: waiting for a new key (box={}, modifiers already held=0x{:X})", Binds::Name(a_slot), held);
 			}
 			SKSEMenuFramework::SetHotkeyEnabled(false);
 		}
 
 		void EndCapture()
 		{
-			if (s_capture.exchange(Bind::kNone) != Bind::kNone) {
+			s_captureMods.store(Chord::kNone, std::memory_order_release);
+			if (s_captureSlot.exchange(-1) >= 0) {
 				SKSEMenuFramework::SetHotkeyEnabled(true);
 				PA("ui: key capture finished, framework hotkey re-enabled");
 			}
 		}
 
-		std::optional<Binds::Target> ToTarget(Bind a_bind)
+		// One chord row: current chord, Rebind, Clear. Every box can be cleared, including auto:
+		// the menu is the only way to unbind what the plugin does, so it has to be able to.
+		void RenderBind(const char* a_label, Chord::Bind& a_bind, Binds::Slot a_slot)
 		{
-			switch (a_bind) {
-			case Bind::kHotkey: return Binds::Target::kHotkey;
-			case Bind::kLeftHotkey: return Binds::Target::kLeftHotkey;
-			case Bind::kModifier: return Binds::Target::kModifier;
-			case Bind::kNone: break;
-			}
-			return std::nullopt;
-		}
-
-		// One key bind row: current key, Rebind, and (optionally) Clear.
-		void RenderBind(const char* a_label, int& a_value, Bind a_target, bool a_allowNone, const char* a_clearReason)
-		{
-			const bool capturing = s_capture.load() == a_target;
+			const int  index = static_cast<int>(Binds::Index(a_slot));
+			const bool capturing = s_captureSlot.load(std::memory_order_acquire) == index;
 
 			ImGui::Text("%s:", a_label);
 			ImGui::SameLine();
 			if (capturing) {
+				const auto mods = s_captureMods.load(std::memory_order_acquire);
 				{
 					const ScopedTextColor warn{ kWarnColor };
-					ImGui::TextUnformatted("listening... press a key, mouse button or gamepad button");
+					if (mods == Chord::kNone) {
+						ImGui::TextUnformatted("listening... press a key (hold Shift, Ctrl or Alt first), Esc cancels");
+					} else {
+						ImGui::TextUnformatted(std::format("listening for {}a key, Esc cancels", Chord::ModsPrefix(mods)).c_str());
+					}
 				}
 				ImGui::SameLine();
 				if (ImGui::Button("Cancel")) {
@@ -111,18 +108,18 @@ namespace SPA::UI
 
 			{
 				const ScopedTextColor value{ kValueColor };
-				ImGui::Text("%s", Keys::Describe(a_value).c_str());
+				ImGui::TextUnformatted(Keys::DescribeChord(a_bind).c_str());
 			}
 			ImGui::SameLine();
-			if (ImGui::Button(std::format("Rebind##{}", static_cast<int>(a_target)).c_str())) {
-				BeginCapture(a_target);
+			if (ImGui::Button(std::format("Rebind##{}", index).c_str())) {
+				BeginCapture(a_slot);
 			}
-			if (a_allowNone && a_value != kNoKey) {
+			if (a_bind.IsBound()) {
 				ImGui::SameLine();
-				if (ImGui::Button(std::format("Clear##{}", static_cast<int>(a_target)).c_str())) {
-					a_value = kNoKey;
+				if (ImGui::Button(std::format("Clear##{}", index).c_str())) {
+					a_bind = Chord::Bind{};
 					Config::Touch();
-					SaveNow(a_clearReason);
+					SaveNow(std::format("{} key cleared", Binds::Name(a_slot)).c_str());
 				}
 			}
 		}
@@ -153,7 +150,7 @@ namespace SPA::UI
 
 			// Right after the button, before Cancel becomes "the last item".
 			if (ImGui::IsItemHovered()) {
-				ImGui::SetTooltip("Mouse 5, no modifier, power attacks at 0 stamina, logging on.");
+				ImGui::SetTooltip("Mouse 5 on auto, the right, left and dual boxes unbound, power attacks at 0 stamina, logging on.");
 			}
 
 			// Re-read: a confirmed reset above just cleared it, so Cancel must not linger.
@@ -176,15 +173,21 @@ namespace SPA::UI
 
 			auto& settings = Config::Get();
 
-			ImGui::SeparatorText("Click");
-			RenderBind("Power attack key", settings.hotkey, Bind::kHotkey, false, "");
-			RenderBind("Power attack key (left, optional)", settings.leftHotkey, Bind::kLeftHotkey, true, "second key cleared");
-			RenderBind("Modifier key (optional)", settings.modifierKey, Bind::kModifier, true, "modifier cleared");
+			ImGui::SeparatorText("Power attack keys");
+			RenderBind("Auto (follows your hands)", settings.binds[Binds::Index(Binds::Slot::kAuto)], Binds::Slot::kAuto);
+			RenderBind("Right power attack", settings.binds[Binds::Index(Binds::Slot::kRight)], Binds::Slot::kRight);
+			RenderBind("Left power attack", settings.binds[Binds::Index(Binds::Slot::kLeft)], Binds::Slot::kLeft);
+			RenderBind("Dual power attack", settings.binds[Binds::Index(Binds::Slot::kDual)], Binds::Slot::kDual);
 
-			// The action is not a setting: it follows what is in the hands, so there is nothing to
-			// configure and nothing to get wrong when the loadout changes.
+			// The action is not a setting for the three fixed boxes: they are whatever they say.
+			// Only auto looks at the hands, so there is nothing to get wrong when the loadout changes.
 			ImGui::Spacing();
-			Body("Both keys attack automatically: two weapons in hand power attack with both, one weapon attacks with that hand. The left key only differs with empty hands, where it swings left. Bind it if you want a dedicated left tap.");
+			Body("Hold Shift, Ctrl or Alt and press a key to bind a chord. Two boxes may share a chord: the one higher in this list wins. Binding the game's own attack key takes that press away from the game, so a tap gives only the power attack.");
+			ImGui::Spacing();
+			Body("Auto picks from your hands: a weapon in both -> dual, one weapon -> that hand, nothing equipped -> right.");
+			Body("Tap = release inside the tap window -> power attack. Hold it longer and nothing happens, except on the game's own attack key, where the hold becomes a normal swing.");
+			Body("Jumping or blocking swallows the power attack action, so there the plugin swings normally first and power attacks 200 ms later.");
+			Body("Bows, crossbows, staves, horses, killmoves, sitting, dialogue and a paused game are left to the game: no power attack, and the press is not taken.");
 
 			ImGui::Spacing();
 			ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10.0f);
@@ -241,17 +244,23 @@ namespace SPA::UI
 			}
 		}
 
-		// While capturing, listen to raw input through the framework's input hook.
+		// While capturing, listen to raw input through the framework's input hook. A modifier is
+		// part of the chord, never the end of the capture, which is what makes Shift + Mouse 5
+		// bindable at all.
 		bool CaptureKey(RE::InputEvent* a_event)
 		{
-			const auto target = s_capture.load();
-			if (target == Bind::kNone || !a_event) {
+			const auto target = s_captureSlot.load(std::memory_order_acquire);
+			if (target < 0 || !a_event) {
 				return false;
 			}
 
+			// Tracked from this batch, in order, so the modifiers the user presses stay in the
+			// preview whether or not the input sink has run yet.
+			auto mods = s_captureMods.load(std::memory_order_acquire);
+
 			for (auto* event = a_event; event; event = event->next) {
 				const auto* button = event->AsButtonEvent();
-				if (!button || !button->IsDown()) {
+				if (!button) {
 					continue;
 				}
 
@@ -260,20 +269,32 @@ namespace SPA::UI
 					continue;
 				}
 
-				const auto targetValue = ToTarget(target);
-				if (!targetValue) {
+				if (const auto modBit = Chord::ModBitFor(code); modBit != Chord::kNone) {
+					// Not swallowed: the menu is open, and letting go has to take the modifier
+					// back out of the preview.
+					const bool held = button->Value() > 0.0f;
+					mods = held ? (mods | modBit) : (mods & ~modBit);
+					s_captureMods.store(mods, std::memory_order_release);
+					PAI("ui: capture modifier '{}' {} (0x{:X})", Keys::Describe(code), held ? "down" : "up", mods);
 					continue;
 				}
 
-				auto& settings = Config::Get();
-				// One key is one role: binding a key that another bind holds takes it away, and the
-				// other row shows as unbound. Only the main key is protected (Binds::Assign).
-				if (!Binds::Assign(settings.hotkey, settings.leftHotkey, settings.modifierKey, *targetValue, code)) {
-					PAW("ui: '{}' is the power attack key, pick another one", Keys::Describe(code));
+				if (!button->IsDown()) {
 					continue;
 				}
 
-				PAI("ui: captured '{}' -> {}", Keys::Describe(code), Config::Describe());
+				// Escape leaves the box as it was: the way out of a capture without binding.
+				if (code == Chord::kScanEscape) {
+					PAI("ui: key capture cancelled with Escape");
+					EndCapture();
+					return true;
+				}
+
+				auto&      settings = Config::Get();
+				const auto bind = Chord::Bind{ code, mods };
+				settings.binds[static_cast<std::size_t>(target)] = bind;
+
+				PAI("ui: captured '{}' -> {}", Keys::DescribeChord(bind), Config::Describe());
 				Config::Touch();
 				EndCapture();
 				SaveNow("key rebound");

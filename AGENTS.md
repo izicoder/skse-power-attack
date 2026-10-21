@@ -3,28 +3,31 @@
 ## What this is
 
 **SKSE Power Attack** — a minimal SKSE plugin (C++23, CommonLibSSE-NG, Address Library) that turns a tap of
-one key into a vanilla right-hand power attack. One DLL: no plugin file, no Papyrus, no MCM. Optional settings
+one bound chord into a vanilla power attack. One DLL: no plugin file, no Papyrus, no MCM. Optional settings
 tab through SKSE Menu Framework.
 
-A minimal plugin by design: one tap, one power attack. Do not add extras (dual attack, attack-window
-notify/queue, long-press modes, block unbinding) unless asked; "simple" is the point.
+A minimal plugin by design: one tap, one power attack. Do not add extras (attack-window notify/queue,
+long-press modes, block unbinding) unless asked; "simple" is the point.
 
 Keep the surface small, because that is what "compatible with everything" means here: no hooks, no vtable or
-record edits, input events are never consumed, no threads (use the task interface and a re-posting task for
-anything that has to wait, see `Attack::ScheduleDelayedPowerAttack`), and no config file shipped.
+record edits, no threads (use the task interface and a re-posting task for anything that has to wait, see
+`Attack::ScheduleDelayedPowerAttack`), and no config file shipped. The one exception to "input is never
+consumed": a press of a key the game itself attacks with is reported as handled (`kStop`) while a box owns it,
+because that is the only way a tap can cancel the normal swing. Nothing else is ever consumed.
 
 ## Layout
 
 | Path | What it does |
 |---|---|
 | `src/Plugin.cpp` | `SKSEPlugin_Load` + messaging: config load, action init, input/UI registration. |
-| `src/Config.h/.cpp` | `Settings` (6 fields), JSON load/save next to the DLL, format version + migrations, validation, revision counter. |
-| `src/Selection.h` | The tap decision, engine-free: hand(s) held + which key -> right, left or dual power attack. Unit tested. |
-| `src/Binds.h` | Bind assignment, engine-free: one key, one role ("last one wins", the main key is protected). Unit tested. |
-| `src/Attack.h/.cpp` | Resolves all six vanilla attack/power-attack actions, submits them through the task interface, jump/block fallback as a task chain (no threads). |
-| `src/Input.h/.cpp` | Key encoding (SKSE InputMap numbering), labels, the tap sink (press + release inside the window) for both keys, its gates, the menu-open sink. |
-| `tests/` | `SelectionTests.cpp`, `BindsTests.cpp`: plain `main()`, no framework, no engine. |
-| `src/UI.h/.cpp` | SKSE Menu Framework tab: rebinds, toggles, two-click reset. |
+| `src/Config.h/.cpp` | `Settings` (`binds` + 3 fields), JSON load/save next to the DLL, format version + migrations, validation, revision counter. |
+| `src/Chord.h` | What a bind is, engine-free: a key plus a Shift/Ctrl/Alt mask, the scan codes of the modifiers, matching and the label prefix. Unit tested. |
+| `src/Binds.h` | The four boxes in menu order (`kAuto`, `kRight`, `kLeft`, `kDual`), engine-free, and `Resolve()`: which box a press belongs to. Unit tested. |
+| `src/Selection.h` | The tap decision, engine-free: `Choose()` is the auto box (hands -> action), `ForSlot()` adds the three fixed boxes. Unit tested. |
+| `src/Attack.h/.cpp` | Resolves all six vanilla attack/power-attack actions, submits them through the task interface, jump/block fallback as a task chain (no threads). `PowerAttack` and the `NormalAttack` hand-back. |
+| `src/Input.h/.cpp` | Key encoding (SKSE InputMap numbering), labels including `Keys::DescribeChord`, the tap sink (modifier mask, four tap slots, press + release inside the window), its gates, the cancel, the menu-open sink. |
+| `tests/` | `ChordTests.cpp`, `BindsTests.cpp`, `SelectionTests.cpp`: plain `main()`, no framework, no engine. |
+| `src/UI.h/.cpp` | SKSE Menu Framework tab: four chord rows with chord capture, toggles, two-click reset. |
 | `src/Log.h` | `PA`/`PAI`/`PAW`/`PAE`, trace level, flushed per line. |
 | `extern/SKSEMenuFramework.h` | Vendored framework header (do not edit). |
 | `ROADMAP.md` | Current state, the Nexus comment requests and their verdicts, next steps, deliberate non-goals. |
@@ -56,15 +59,20 @@ would silently replace a DLL the running game has loaded. The default deploy tar
 
 A change counts as verified when:
 
-1. `ctest --test-dir build/vs2022 --output-on-failure` passes (`SelectionTests`, `BindsTests`). They build in
-   seconds without the engine, so write the case there before touching `Selection.h` or `Binds.h`.
+1. `ctest --test-dir build/vs2022 --output-on-failure` passes (`ChordTests`, `BindsTests`, `SelectionTests`).
+   They build in seconds without the engine, so write the case there before touching `Chord.h`, `Binds.h` or
+   `Selection.h`.
 2. `cmake --build build/vs2022` (or `Build-Release.ps1` when the version matters) ends with
    `Linking CXX shared library SKSEPowerAttack.dll` and no error lines.
 3. `.\tools\Deploy.ps1` puts it in the MO2 folder (refuses while `SkyrimSE` runs), the mod is enabled, Skyrim is
    launched.
 4. `…\Documents\My Games\Skyrim Special Edition\SKSE\SKSEPowerAttack.log` shows the banner, `config: loaded:`,
-   `input: input sink registered` and then one `tap #N ...` line per tap - see the log lines under Gotchas.
-   `attack: 'right power attack' -> action 0x00013383 performed=true` names the hand that was picked.
+   `input: game attack key:` (the control map's own attack binding), `input: input sink registered` and then one
+   `tap #N ...` line per tap - see the log lines under Gotchas. `attack: 'right power attack' -> action
+   0x00013383 performed=true` names the action that was submitted.
+
+The cancel is the only part that cannot be verified from a build: bind Left Mouse, tap it (one power attack, no
+normal swing) and hold it (one normal swing on release).
 
 ## Release and the mod page
 
@@ -87,23 +95,27 @@ A change counts as verified when:
 ## Decisions already made
 
 - **Tap, not hold.** The attack fires on release, and only if the press was shorter than `tapWindowMs`
-  (default 200 ms, range 20-1000). The modifier is judged at press, the gates at release. This mirrors
+  (default 200 ms, range 20-1000). The chord is resolved at press, the gates at release. This mirrors
   BlinkDash's tap semantics deliberately.
-- **The hand is not a setting.** `src/Selection.h` picks the action from what the player holds: weapons in both
-  hands -> `ActionDualPowerAttack`, one weapon -> that hand's action, nothing -> the tapped key's own hand. The
-  vanilla form ids are `0x13004` left attack, `0x13005` right attack, `0x50C96` dual attack, `0x2E2F6` left
-  power, `0x13383` right power, `0x2E2F7` dual power. An earlier draft shipped a `powerAttack: right|left|dual`
-  key; the owner rejected it as clunky configuration. Do not bring it back.
-- **Two keys, one rule.** `hotkey` (mouse button 5) and `leftHotkey` (unbound by default) both call the same
-  `Selection::Choose`; only the empty-handed fallback differs (`Selection::FallbackForKey`). The second key is a
-  mirror, not a second feature.
-- **One key, one role.** `src/Binds.h` `Assign()` gives a key to whoever was bound last and unbinds the previous
-  holder; the main key is protected (the menu refuses instead of taking it). The menu goes through `Assign()`;
-  `Validate()` applies the same precedence to a hand-edited file by dropping the optional key.
-- The tests in `tests/` cover exactly those two pure headers (`Selection`, `Binds`) and are the reason they are
-  engine-free: `cmake --build build/vs2022 --target spa_SelectionTests spa_BindsTests`, or
-  `ctest --test-dir build/vs2022 --output-on-failure`.
-- Default hotkey is mouse button 5 (`260`), not right mouse.
+- **Four boxes, order is priority.** `src/Binds.h` lists them in menu order: auto, right, left, dual. The box
+  decides the action (`Selection::ForSlot`); only auto reads the hands (`Selection::Choose`). A press goes to the
+  most specific chord (one that names modifiers beats a bare chord on the same key), and an exact duplicate goes
+  to the box higher in the menu. So duplicates are legal and rebinding never fights the user. The vanilla form
+  ids are `0x13004` left attack, `0x13005` right attack, `0x50C96` dual attack, `0x2E2F6` left power,
+  `0x13383` right power, `0x2E2F7` dual power. An earlier draft shipped a `powerAttack: right|left|dual` key;
+  the owner rejected it as clunky configuration. Right/left/dual are keys instead, which is why it stays gone.
+- **A bind is a chord** (`src/Chord.h`): key + `Chord::Mods` mask (shift 1, ctrl 2, alt 4), both left and right
+  modifier scan codes map to the same bit. A modifier can never be a chord's key, and extra held modifiers are
+  tolerated so sprinting does not block a bare chord.
+- **The game's attack key is cancelled, nothing else is.** `Input::IsGameAttackKey` asks the control map
+  (`"Attack"` event id) whether the game attacks with that key; only then does the sink answer `kStop` for the
+  press and its release. If that press turns out to be a hold or hits a gate, `Attack::NormalAttack` hands the
+  swing back, so holding a bound attack button still attacks. Keys the game ignores are never swallowed.
+- The tests in `tests/` cover exactly those three pure headers (`Chord`, `Binds`, `Selection`) and are the
+  reason they are engine-free: `cmake --build build/vs2022 --target spa_ChordTests spa_BindsTests
+  spa_SelectionTests`, or `ctest --test-dir build/vs2022 --output-on-failure`.
+- Default is auto on mouse button 5 (`260`), no modifier; the other three boxes are unbound. Every box can be
+  cleared, including auto - the menu is the only way to unbind, so it has to be able to.
 - The jump/block fallback is 200 ms of re-posting tasks, never a thread.
 - No attribution to any other power-attack mod anywhere (README, page, comments); it was removed on request,
   do not re-add it.
@@ -119,8 +131,20 @@ A change counts as verified when:
   scratch files belong outside the repo (`.playwright-mcp/` is ignored for that reason).
 - A config file written by the pre-rename build (`OneClickPowerAttack.json`) is imported once and left in
   place; `config: importing the settings left by the earlier build` in the log is correct, not a bug.
-- Reading a test run: `tap #N on '<key>' (held N ms) -> power attack`, `held N ms > 200 ms window, no power
-  attack (hold)`, `tap ignored (<reason>)`, `input: menu '<name>' opened, dropping the modifier state`.
+- Reading a test run: `tap #N on '<chord>' (<box> box, held N ms) -> power attack`,
+  `'<chord>' held N ms > 200 ms window, no power attack (hold)`, `tap ignored (<reason>)`,
+  `input: menu '<name>' opened, dropping the modifier state`. A press taken from the game adds
+  `, the game does not get this press` on the down line, and a tap that does not fire hands the swing back with
+  `attack: the tap key was held, normal attack`.
+- Config format is 2. A format 1 file (or a `OneClickPowerAttack.json` with the old three keys) is migrated in
+  place: `hotkey` + `modifierKey` -> `binds.auto`, `leftHotkey` -> `binds.left`, `right`/`dual` unbound. The left
+  box is a plain left power attack now - the old second key used to give the dual attack while dual-wielding.
+- `kStop` from the input sink is the only cancel and it is unverified: whether the game honours it for its own
+  attack handling depends on where its sink sits in the list. If a tap on a bound attack key still double-fires,
+  the down line will say the press was taken and the attack happened anyway, and a hook on the attack handler is
+  the only other route (ask before adding one).
+- In the menu, a capture ends on the first non-modifier key press; modifiers only update the preview, and Escape
+  cancels. That is what makes `Shift + Mouse 5` bindable - do not "fix" it by ending the capture on a modifier.
 - Publishing to GitHub refuses with "HEAD (...) is not pushed to its upstream branch": push first, the release
   is pinned to that exact commit.
 - Release tags only exist on the remote (`gh` creates them), so a local `git describe --tags` finds nothing and

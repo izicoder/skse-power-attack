@@ -49,6 +49,9 @@ set(SOURCES
 	src/Log.h
 	src/Config.h
 	src/Config.cpp
+	src/Chord.h
+	src/Binds.h
+	src/Selection.h
 	src/Attack.h
 	src/Attack.cpp
 	src/Input.h
@@ -90,15 +93,15 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # ---------------------------------------------------------------------------
-# Unit tests for the tap decision (Selection.h). Engine-free on purpose: no CommonLibSSE, no
-# SKSE, no precompiled header, so they build in seconds and run without the game.
+# Unit tests for the pure logic (Chord.h, Binds.h, Selection.h). Engine-free on purpose: no
+# CommonLibSSE, no SKSE, no precompiled header, so they build in seconds and run without the game.
 #   cmake --build build/vs2022 --target spa_tests
 #   ctest --test-dir build/vs2022 --output-on-failure
 # ---------------------------------------------------------------------------
 option(SPA_BUILD_TESTS "Build the unit tests for the pure selection logic" ON)
 if(SPA_BUILD_TESTS)
 	enable_testing()
-	foreach(test_name IN ITEMS SelectionTests BindsTests)
+	foreach(test_name IN ITEMS SelectionTests BindsTests ChordTests)
 		add_executable(spa_${test_name} tests/${test_name}.cpp)
 		target_include_directories(spa_${test_name} PRIVATE src)
 		target_compile_features(spa_${test_name} PRIVATE cxx_std_23)

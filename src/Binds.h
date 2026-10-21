@@ -1,47 +1,65 @@
 #pragma once
 
-// Bind assignment rules, kept free of the game so they can be unit tested (tests/BindsTests.cpp).
-// One key must never be two roles at once: the last key the user binds takes it, and whatever
-// held it before lets go (its value becomes kNoKey).
+#include "Chord.h"
+
+#include <array>
+#include <cstddef>
+#include <optional>
+
+// The power attack keys, in the order the menu shows them. Kept free of the game so the choice
+// between them can be unit tested (tests/BindsTests.cpp).
 //
-// The one exception is the main power attack key. It is mandatory, so an optional bind cannot
-// take its key - the menu refuses that with a log line instead of leaving the tap with no key.
+// The order is the priority. Two boxes on the exact same chord are allowed - the one higher in
+// the menu wins - which means the player never has to fight the menu to bind what they want.
 
 namespace SPA::Binds
 {
-	// Same "no key" value as SPA::kNoKey in Config.h, which aliases this one.
-	inline constexpr int kNoKey = -1;
-
-	enum class Target
+	enum class Slot : std::size_t
 	{
-		kHotkey,
-		kLeftHotkey,
-		kModifier,
+		kAuto = 0,  // follows the hands: both weapons -> dual, one weapon -> that hand, nothing -> right
+		kRight = 1,
+		kLeft = 2,
+		kDual = 3,
 	};
 
-	// Assigns a_code to a_target. Returns false when the assignment is refused (a_code is -1, or
-	// it belongs to the main key); the three values are left untouched in that case.
-	constexpr bool Assign(int& a_hotkey, int& a_leftHotkey, int& a_modifierKey, Target a_target, int a_code) noexcept
+	inline constexpr std::size_t kSlotCount = 4;
+
+	using BindList = std::array<Chord::Bind, kSlotCount>;
+
+	constexpr std::size_t Index(Slot a_slot) noexcept
 	{
-		if (a_code == kNoKey) {
-			return false;
-		}
-		if (a_target != Target::kHotkey && a_code == a_hotkey) {
-			return false;  // the main key is not up for grabs
-		}
+		return static_cast<std::size_t>(a_slot);
+	}
 
-		if (a_target != Target::kLeftHotkey && a_leftHotkey == a_code) {
-			a_leftHotkey = kNoKey;
+	constexpr const char* Name(Slot a_slot) noexcept
+	{
+		switch (a_slot) {
+		case Slot::kAuto: return "auto";
+		case Slot::kRight: return "right";
+		case Slot::kLeft: return "left";
+		case Slot::kDual: return "dual";
 		}
-		if (a_target != Target::kModifier && a_modifierKey == a_code) {
-			a_modifierKey = kNoKey;
-		}
+		return "auto";
+	}
 
-		switch (a_target) {
-		case Target::kHotkey: a_hotkey = a_code; break;
-		case Target::kLeftHotkey: a_leftHotkey = a_code; break;
-		case Target::kModifier: a_modifierKey = a_code; break;
+	// Which box a press belongs to, or nullopt when no box uses that key. The most specific
+	// chord wins (Shift + Mouse 5 beats Mouse 5), and a full duplicate goes to the box higher in
+	// the menu, because that is the only difference left between the two.
+	constexpr std::optional<Slot> Resolve(const BindList& a_binds, int a_code, unsigned a_held) noexcept
+	{
+		std::optional<Slot> best{};
+		int                 bestSpecificity = -1;
+		for (std::size_t i = 0; i < kSlotCount; ++i) {
+			const auto& bind = a_binds[i];
+			if (!Chord::Matches(bind, a_code, a_held)) {
+				continue;
+			}
+			const int specificity = Chord::Specificity(bind);
+			if (specificity > bestSpecificity) {  // strict: an equal chord keeps the box above it
+				bestSpecificity = specificity;
+				best = static_cast<Slot>(i);
+			}
 		}
-		return true;
+		return best;
 	}
 }

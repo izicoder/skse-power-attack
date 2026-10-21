@@ -1,15 +1,24 @@
-// Unit tests for bind assignment: what happens when a key is already in use. One key must never
-// be two roles at once, and the last key the user binds takes it.
+// Unit tests for the box resolution: which of the four power attack boxes a press belongs to.
+// Pure logic only (Binds.h), no game, no SKSE:
 //
-//   cmake --build build/vs2022 --target spa_tests && build/vs2022\spa_tests.exe
+//   cmake --build build/vs2022 --target spa_BindsTests && build/vs2022/spa_BindsTests.exe
+//
+// The two rules under test: an identical chord goes to the box higher in the menu, and a chord
+// that names a modifier beats a bare chord on the same key.
 
 #include "Binds.h"
 
 #include <cstdio>
+#include <string>
 
 namespace
 {
-	using SPA::Binds::Target;
+	using namespace SPA;
+	using Binds::BindList;
+	using Binds::Slot;
+
+	constexpr int kMouse5 = 260;
+	constexpr int kMouse4 = 259;
 
 	int failures = 0;
 
@@ -21,105 +30,101 @@ namespace
 		}
 	}
 
-	struct Keys
+	void Expect(const char* a_what, std::optional<Slot> a_expected, const BindList& a_binds, int a_code, unsigned a_held)
 	{
-		int hotkey{ 260 };
-		int leftHotkey{ SPA::Binds::kNoKey };
-		int modifierKey{ SPA::Binds::kNoKey };
-
-		bool Assign(Target a_target, int a_code) { return SPA::Binds::Assign(hotkey, leftHotkey, modifierKey, a_target, a_code); }
-	};
-
-	// Every key bound at most once, which is the invariant the whole rule exists for.
-	void ExpectUnique(const Keys& a_keys, const char* a_what)
-	{
-		const int codes[] = { a_keys.hotkey, a_keys.leftHotkey, a_keys.modifierKey };
-		for (int i = 0; i < 3; ++i) {
-			if (codes[i] == SPA::Binds::kNoKey) {
-				continue;
-			}
-			for (int j = i + 1; j < 3; ++j) {
-				if (codes[i] == codes[j]) {
-					++failures;
-					std::printf("FAIL %s: key %d bound twice\n", a_what, codes[i]);
-				}
-			}
+		const auto actual = Binds::Resolve(a_binds, a_code, a_held);
+		if (actual != a_expected) {
+			++failures;
+			const auto name = [](std::optional<Slot> a_slot) {
+				return a_slot ? std::string{ Binds::Name(*a_slot) } : std::string{ "nothing" };
+			};
+			std::printf("FAIL %s: expected %s, got %s\n", a_what, name(a_expected).c_str(), name(actual).c_str());
 		}
+	}
+
+	BindList Empty()
+	{
+		return BindList{};
 	}
 }
 
 int main()
 {
-	// A key nobody uses just gets bound.
+	// Nothing bound: no key belongs to the plugin.
+	Expect("nothing bound", std::nullopt, Empty(), kMouse5, Chord::kNone);
+
+	// One box, one chord.
 	{
-		Keys keys;
-		Check(keys.Assign(Target::kLeftHotkey, 42), "free key is accepted");
-		Check(keys.leftHotkey == 42, "free key lands on the second key");
-		Check(keys.hotkey == 260, "free key leaves the main key alone");
+		auto binds = Empty();
+		binds[Binds::Index(Slot::kAuto)] = { kMouse5, Chord::kNone };
+		Expect("auto only", Slot::kAuto, binds, kMouse5, Chord::kNone);
+		Expect("auto only, other key", std::nullopt, binds, kMouse4, Chord::kNone);
+		Expect("auto only, with a modifier held", Slot::kAuto, binds, kMouse5, Chord::kAlt);
 	}
 
-	// The main key takes a key away from the second key: one key, one role.
+	// Each box can own its own key.
 	{
-		Keys keys;
-		keys.Assign(Target::kLeftHotkey, 42);
-		Check(keys.Assign(Target::kHotkey, 42), "main key takes the second key's key");
-		Check(keys.hotkey == 42, "main key holds it");
-		Check(keys.leftHotkey == SPA::Binds::kNoKey, "second key lets go");
-		ExpectUnique(keys, "main steals from second");
+		auto binds = Empty();
+		binds[0] = { kMouse5, Chord::kNone };
+		binds[1] = { 30, Chord::kNone };
+		binds[2] = { 31, Chord::kNone };
+		binds[3] = { kMouse4, Chord::kNone };
+		Expect("auto box", Slot::kAuto, binds, kMouse5, Chord::kNone);
+		Expect("right box", Slot::kRight, binds, 30, Chord::kNone);
+		Expect("left box", Slot::kLeft, binds, 31, Chord::kNone);
+		Expect("dual box", Slot::kDual, binds, kMouse4, Chord::kNone);
 	}
 
-	// The main key takes a key away from the modifier too.
+	// The same chord on two boxes is allowed and goes to the box above.
 	{
-		Keys keys;
-		keys.Assign(Target::kModifier, 42);
-		Check(keys.Assign(Target::kHotkey, 42), "main key takes the modifier's key");
-		Check(keys.hotkey == 42, "main key holds it");
-		Check(keys.modifierKey == SPA::Binds::kNoKey, "modifier lets go");
+		auto binds = Empty();
+		binds[0] = { kMouse5, Chord::kNone };
+		binds[2] = { kMouse5, Chord::kNone };
+		Expect("duplicate goes to auto", Slot::kAuto, binds, kMouse5, Chord::kNone);
+
+		binds[0] = Chord::Bind{};
+		Expect("duplicate with auto unbound goes to left", Slot::kLeft, binds, kMouse5, Chord::kNone);
+
+		binds[1] = { kMouse5, Chord::kNone };
+		binds[3] = { kMouse5, Chord::kNone };
+		Expect("three duplicates, topmost wins", Slot::kRight, binds, kMouse5, Chord::kNone);
 	}
 
-	// The second key takes a key away from the modifier.
+	// A chord that names a modifier is more specific, so it wins even from a lower box. Without
+	// this, Shift + Mouse 5 could never fire while a bare Mouse 5 sits in a box above it.
 	{
-		Keys keys;
-		keys.Assign(Target::kModifier, 42);
-		Check(keys.Assign(Target::kLeftHotkey, 42), "second key takes the modifier's key");
-		Check(keys.leftHotkey == 42, "second key holds it");
-		Check(keys.modifierKey == SPA::Binds::kNoKey, "modifier lets go");
-		ExpectUnique(keys, "second steals from modifier");
+		auto binds = Empty();
+		binds[0] = { kMouse5, Chord::kNone };
+		binds[1] = { kMouse5, Chord::kShift };
+		Expect("shift wins over the bare chord above it", Slot::kRight, binds, kMouse5, Chord::kShift);
+		Expect("bare chord still fires on its own", Slot::kAuto, binds, kMouse5, Chord::kNone);
+		Expect("bare chord fires while alt is held", Slot::kAuto, binds, kMouse5, Chord::kAlt);
+		Expect("ctrl does not count as shift", Slot::kAuto, binds, kMouse5, Chord::kCtrl);
 	}
 
-	// The main key is mandatory, so nothing takes its key: the tap would have no key at all.
+	// Two modifiers beat one, wherever the boxes are.
 	{
-		Keys keys;
-		Check(!keys.Assign(Target::kLeftHotkey, 260), "second key cannot take the main key's key");
-		Check(keys.hotkey == 260, "main key keeps it");
-		Check(keys.leftHotkey == SPA::Binds::kNoKey, "second key stays unbound");
-
-		Check(!keys.Assign(Target::kModifier, 260), "modifier cannot take the main key's key");
-		Check(keys.modifierKey == SPA::Binds::kNoKey, "modifier stays unbound");
+		auto binds = Empty();
+		binds[0] = { kMouse5, Chord::kShift };
+		binds[3] = { kMouse5, Chord::kShift | Chord::kAlt };
+		Expect("two modifiers beat one", Slot::kDual, binds, kMouse5, Chord::kShift | Chord::kAlt);
+		Expect("one modifier alone", Slot::kAuto, binds, kMouse5, Chord::kShift);
 	}
 
-	// Binding a key to itself changes nothing and is not a conflict.
+	// Unbound boxes (no key) never take a press, even when the code is 0.
 	{
-		Keys keys;
-		Check(keys.Assign(Target::kHotkey, 260), "main key to its own key is accepted");
-		Check(keys.hotkey == 260, "main key unchanged");
+		auto binds = Empty();
+		binds[0] = Chord::Bind{};
+		binds[1] = Chord::Bind{};
+		Expect("all unbound", std::nullopt, binds, 0, Chord::kNone);
 	}
 
-	// "No key" is not an assignment: Clear() writes it directly.
+	// Every code the resolver can see comes from the sink, so it is never negative; a negative
+	// key means "unbound" and must not match anything.
 	{
-		Keys keys;
-		Check(!keys.Assign(Target::kLeftHotkey, SPA::Binds::kNoKey), "unbinding through Assign is refused");
-	}
-
-	// Whatever order keys are bound in, the invariant holds.
-	{
-		Keys keys;
-		const Target targets[] = { Target::kLeftHotkey, Target::kModifier, Target::kHotkey, Target::kModifier, Target::kLeftHotkey };
-		const int codes[] = { 42, 260, 42, 43, 43 };
-		for (int i = 0; i < 5; ++i) {
-			keys.Assign(targets[i], codes[i]);
-			ExpectUnique(keys, "sequence");
-		}
+		auto binds = Empty();
+		binds[0] = { Chord::kNoKey, Chord::kNone };
+		Expect("negative key is unbound", std::nullopt, binds, Chord::kNoKey, Chord::kNone);
 	}
 
 	if (failures == 0) {

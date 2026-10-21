@@ -63,40 +63,65 @@ namespace SPA
 			}
 			return std::format("Key {}", a_code);
 		}
+
+		std::string DescribeChord(const Chord::Bind& a_bind)
+		{
+			if (!a_bind.IsBound()) {
+				return "None";
+			}
+			return Chord::ModsPrefix(a_bind.mods) + Describe(a_bind.key);
+		}
 	}
 
 	namespace Input
 	{
 		namespace
 		{
-			// One slot per bind: the main key and the optional second key each need their own
-			// press timestamp and modifier snapshot, or a tap on one would judge the other.
+			// One waiting press per box. The code is stored so a release only finishes the tap its
+			// own press started (two boxes may listen on the same key with different modifiers),
+			// and "taken" remembers that the game did not get this press.
 			struct Tap
 			{
 				std::atomic<std::int64_t> pressTicks{ 0 };
-				std::atomic<bool>         modifierAtPress{ true };
+				std::atomic<int>          code{ Chord::kNoKey };
+				std::atomic<bool>         taken{ false };
 			};
 
-			std::array<Tap, 2> s_taps{};
-			std::atomic<bool> s_modifierHeld{ false };
-			std::atomic<int>  s_clicks{ 0 };
+			std::array<Tap, Binds::kSlotCount> s_taps{};
+			std::atomic<unsigned> s_heldMods{ 0 };
+			std::atomic<int>      s_clicks{ 0 };
 
-			// Which slot a pressed key belongs to, or nullopt for a key this plugin does not use.
-			// The second key is unbound (-1) by default and then never matches.
-			std::optional<Selection::Key> KeyFor(const Settings& a_settings, int a_code)
+			std::int64_t Now()
 			{
-				if (a_code == a_settings.hotkey) {
-					return Selection::Key::kMain;
-				}
-				if (a_settings.leftHotkey != kNoKey && a_code == a_settings.leftHotkey) {
-					return Selection::Key::kLeft;
-				}
-				return std::nullopt;
+				return std::chrono::steady_clock::now().time_since_epoch().count();
 			}
 
-			Tap& SlotFor(Selection::Key a_key)
+			RE::INPUT_DEVICE DeviceOf(int a_code)
 			{
-				return s_taps[static_cast<std::size_t>(a_key)];
+				const auto code = static_cast<std::uint32_t>(a_code);
+				if (code < Keys::kMouseOffset) {
+					return RE::INPUT_DEVICE::kKeyboard;
+				}
+				if (code < Keys::kGamepadOffset) {
+					return RE::INPUT_DEVICE::kMouse;
+				}
+				return RE::INPUT_DEVICE::kGamepad;
+			}
+
+			// True when the game itself attacks with this key. Those presses are the only ones the
+			// sink takes away from the game, because they are the only ones where the tap would
+			// otherwise produce two attacks. A key the game ignores (Mouse 5, an unused letter) is
+			// left alone: there is nothing to cancel, and swallowing it could only cost the game a
+			// binding this build does not know about.
+			bool IsGameAttackKey(int a_code)
+			{
+				auto* map = RE::ControlMap::GetSingleton();
+				if (!map) {
+					return false;
+				}
+				// "Attack" is the gameplay event id in Skyrim's control map; the returned code uses
+				// the same numbering as ButtonEvent, i.e. the one Encode() produced.
+				return map->GetMappedKey("Attack"sv, DeviceOf(a_code)) == static_cast<std::uint32_t>(a_code);
 			}
 
 			bool IsRidingHorse(RE::Actor* a_actor)
@@ -162,6 +187,7 @@ namespace SPA
 						return RE::BSEventNotifyControl::kContinue;
 					}
 
+					bool        taken = false;
 					const auto& settings = Config::Cached();
 					try {
 						for (auto* event = *a_events; event; event = event->next) {
@@ -175,80 +201,112 @@ namespace SPA
 								continue;
 							}
 
+							// Modifiers are tracked before anything else: they make a chord more
+							// specific and are never a chord's own key, so their game action (sprint,
+							// crouch, walk) is never touched.
+							if (const auto modBit = Chord::ModBitFor(code); modBit != Chord::kNone) {
+								if (button->Value() > 0.0f) {
+									s_heldMods.fetch_or(modBit, std::memory_order_acq_rel);
+									PAI("input: modifier '{}' down (0x{:X})", Keys::Describe(code), s_heldMods.load(std::memory_order_acquire));
+								} else {
+									s_heldMods.fetch_and(~modBit, std::memory_order_acq_rel);
+									PAI("input: modifier '{}' up (0x{:X})", Keys::Describe(code), s_heldMods.load(std::memory_order_acquire));
+								}
+								continue;
+							}
+
 							// ButtonEvent semantics: the first press has heldDownSecs == 0, every
 							// repeat while held has it > 0, and the release has value == 0.
 							const bool down = button->Value() > 0.0f && button->HeldDuration() <= 0.0f;
-							const bool up = button->Value() <= 0.0f && button->HeldDuration() > 0.0f;
-
-							if (settings.modifierKey != kNoKey) {
-								if (code == settings.modifierKey && (down || up)) {
-									s_modifierHeld.store(down, std::memory_order_release);
-									PA("input: modifier '{}' {}", Keys::Describe(code), down ? "down" : "up");
-								}
-							}
-
-							const auto key = KeyFor(settings, code);
-							if (!key) {
-								continue;
-							}
-							auto& tap = SlotFor(*key);
-
 							if (button->Value() > 0.0f) {
-								// Press and every repeat while held. Only the first press arms the
-								// tap, and a hold never fires: the key can be bound next to sprint
-								// or jump without the power attack going off every frame.
-								if (down) {
-									tap.pressTicks.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_release);
-									// The modifier has to be down when the tap starts; releasing it
-									// first and the hotkey second still counts.
-									tap.modifierAtPress.store(
-										settings.modifierKey == kNoKey || s_modifierHeld.load(std::memory_order_acquire),
-										std::memory_order_release);
-									PAI("input: '{}' down ({} key), release within {} ms to power attack",
-										Keys::Describe(code), *key == Selection::Key::kLeft ? "second" : "main", settings.tapWindowMs);
+								if (!down) {
+									continue;  // a repeat while held, not a new press
 								}
+
+								const auto slot = Binds::Resolve(settings.binds, code, s_heldMods.load(std::memory_order_acquire));
+								if (!slot) {
+									continue;
+								}
+
+								auto&       tap = s_taps[Binds::Index(*slot)];
+								const auto& bind = settings.binds[Binds::Index(*slot)];
+
+								// A gate means the game must keep its press: with a bow drawn the same
+								// click has to fire the arrow, not vanish into a tap that is rejected.
+								const bool take = IsGameAttackKey(code) && GateReason(settings) == nullptr;
+
+								tap.code.store(code, std::memory_order_release);
+								tap.taken.store(take, std::memory_order_release);
+								tap.pressTicks.store(Now(), std::memory_order_release);
+								taken |= take;
+
+								PAI("input: '{}' down ({} box){}: release within {} ms to power attack",
+									Keys::DescribeChord(bind), Binds::Name(*slot),
+									take ? ", the game does not get this press" : "", settings.tapWindowMs);
 								continue;
 							}
 
-							// Release: this is where the click is judged. The engine reports how long
-							// the button was down; the timestamp taken at the press covers the case
-							// where it does not.
-							const auto   pressed = tap.pressTicks.exchange(0, std::memory_order_acq_rel);
-							const auto   held = button->HeldDuration();
-							const auto   now = std::chrono::steady_clock::now().time_since_epoch().count();
-							const auto   ticksPerSecond = static_cast<double>(std::chrono::steady_clock::period::den) /
-								static_cast<double>(std::chrono::steady_clock::period::num);
-							const double heldSeconds = held > 0.0f
-								? static_cast<double>(held)
-								: (pressed != 0 ? static_cast<double>(now - pressed) / ticksPerSecond : 0.0);
-							if (pressed == 0 && held <= 0.0f) {
+							// Release: the box still waiting for this exact key, if any.
+							std::optional<Binds::Slot> slot{};
+							for (std::size_t i = 0; i < Binds::kSlotCount; ++i) {
+								if (s_taps[i].code.load(std::memory_order_acquire) == code &&
+									s_taps[i].pressTicks.load(std::memory_order_acquire) != 0) {
+									slot = static_cast<Binds::Slot>(i);
+									break;
+								}
+							}
+							if (!slot) {
 								PA("input: '{}' released without a recorded press, ignoring", Keys::Describe(code));
 								continue;
 							}
 
-							// Whole milliseconds on both sides, so the comparison matches the
-							// number shown in the menu and the JSON.
+							auto&      tap = s_taps[Binds::Index(*slot)];
+							const auto pressed = tap.pressTicks.exchange(0, std::memory_order_acq_rel);
+							const bool took = tap.taken.exchange(false, std::memory_order_acq_rel);
+							tap.code.store(Chord::kNoKey, std::memory_order_release);
+							taken |= took;
+
+							const auto& bind = settings.binds[Binds::Index(*slot)];
+
+							// The engine reports how long the button was down; the timestamp taken
+							// at the press covers the case where it does not.
+							const auto   held = button->HeldDuration();
+							const auto   ticksPerSecond = static_cast<double>(std::chrono::steady_clock::period::den) /
+								static_cast<double>(std::chrono::steady_clock::period::num);
+							const double heldSeconds = held > 0.0f
+								? static_cast<double>(held)
+								: (pressed != 0 ? static_cast<double>(Now() - pressed) / ticksPerSecond : 0.0);
+
+							// Whole milliseconds on both sides, so the comparison matches the number
+							// shown in the menu and the JSON.
 							const int heldMs = static_cast<int>(std::lround(heldSeconds * 1000.0));
+
+							// The press was taken from the game, so a tap that does not become a
+							// power attack has to hand its swing back - otherwise holding a bound
+							// key would do nothing at all.
+							const auto handBack = [took, slot](const char* a_reason) {
+								if (took) {
+									Attack::NormalAttack(a_reason, *slot);
+								}
+							};
+
 							if (heldMs > settings.tapWindowMs) {
 								PAI("input: '{}' held {} ms > {} ms window, no power attack (hold)",
-									Keys::Describe(code), heldMs, settings.tapWindowMs);
-								continue;
-							}
-
-							if (!tap.modifierAtPress.exchange(false, std::memory_order_acq_rel)) {
-								PA("input: tap on '{}' started without the modifier '{}', ignoring",
-									Keys::Describe(code), Keys::Describe(settings.modifierKey));
+									Keys::DescribeChord(bind), heldMs, settings.tapWindowMs);
+								handBack("the tap key was held, normal attack");
 								continue;
 							}
 
 							if (const char* reason = GateReason(settings)) {
 								PA("input: tap ignored ({})", reason);
+								handBack("the tap was blocked, normal attack");
 								continue;
 							}
 
 							const auto click = s_clicks.fetch_add(1, std::memory_order_relaxed) + 1;
-							PAI("input: tap #{} on '{}' (held {} ms) -> power attack", click, Keys::Describe(code), heldMs);
-							Attack::PowerAttack("tap", Selection::FallbackForKey(*key));
+							PAI("input: tap #{} on '{}' ({} box, held {} ms) -> power attack",
+								click, Keys::DescribeChord(bind), Binds::Name(*slot), heldMs);
+							Attack::PowerAttack("tap", *slot);
 						}
 					} catch (const std::exception& e) {
 						PAE("input: sink threw: {}", e.what());
@@ -256,66 +314,91 @@ namespace SPA
 						PAE("input: sink threw a non-std exception");
 					}
 
-					return RE::BSEventNotifyControl::kContinue;
+					// kStop is how the tap cancels the normal attack: the game must not also see the
+					// press of the key it attacks with. Whether the game honours it for its own
+					// input handling is the open question - see the log line above.
+					return taken ? RE::BSEventNotifyControl::kStop : RE::BSEventNotifyControl::kContinue;
 				}
 			};
 
-		// The game keeps dispatching input while a menu is up, but a modifier held when the menu
-		// opened never gets its release: the menu eats it. Clearing on open means the tap after
-		// a menu starts from "nothing held" instead of needing the modifier pressed twice.
-		class MenuSink : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
-		{
-		public:
-			static MenuSink* GetSingleton()
+			// The game keeps dispatching input while a menu is up, but a modifier held when the menu
+			// opened never gets its release: the menu eats it. Clearing on open means the tap after
+			// a menu starts from "nothing held" instead of needing the modifier pressed twice.
+			class MenuSink : public RE::BSTEventSink<RE::MenuOpenCloseEvent>
 			{
-				static MenuSink singleton;
-				return &singleton;
-			}
-
-			RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
-			{
-				if (a_event && a_event->opening) {
-					PA("input: menu '{}' opened, dropping the modifier state", a_event->menuName.c_str());
-					ResetState();
+			public:
+				static MenuSink* GetSingleton()
+				{
+					static MenuSink singleton;
+					return &singleton;
 				}
-				return RE::BSEventNotifyControl::kContinue;
+
+				RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override
+				{
+					if (a_event && a_event->opening) {
+						PA("input: menu '{}' opened, dropping the modifier state", a_event->menuName.c_str());
+						ResetState();
+					}
+					return RE::BSEventNotifyControl::kContinue;
+				}
+			};
+		}
+
+		unsigned HeldMods()
+		{
+			return s_heldMods.load(std::memory_order_acquire);
+		}
+
+		void ResetState()
+		{
+			s_heldMods.store(Chord::kNone, std::memory_order_release);
+			for (auto& tap : s_taps) {
+				// A press still waiting for its release is dropped: the release would otherwise
+				// arrive after a load and fire a power attack nobody asked for.
+				tap.pressTicks.store(0, std::memory_order_release);
+				tap.code.store(Chord::kNoKey, std::memory_order_release);
+				tap.taken.store(false, std::memory_order_release);
 			}
-		};
-	}
-
-	void ResetState()
-	{
-		s_modifierHeld.store(false, std::memory_order_release);
-		for (auto& tap : s_taps) {
-			tap.modifierAtPress.store(true, std::memory_order_release);
-			// A press that was still waiting for its release is dropped: the release would
-			// otherwise arrive after a load and fire a power attack nobody asked for.
-			tap.pressTicks.store(0, std::memory_order_release);
-		}
-		PA("input: modifier and pending tap state cleared");
-	}
-
-	void Register()
-	{
-		if (auto* manager = RE::BSInputDeviceManager::GetSingleton()) {
-			manager->AddEventSink(Sink::GetSingleton());
-			const auto& settings = Config::Cached();
-			PAI("input: input sink registered (tap '{}' to power attack, second key: {})",
-				Keys::Describe(settings.hotkey), Keys::Describe(settings.leftHotkey));
-		} else {
-			PAE("input: BSInputDeviceManager singleton is null, the tap will not work");
+			PA("input: modifier and pending tap state cleared");
 		}
 
-		if (auto* ui = RE::UI::GetSingleton()) {
-			if (auto* source = ui->GetEventSource<RE::MenuOpenCloseEvent>()) {
-				source->AddEventSink(MenuSink::GetSingleton());
-				PAI("input: menu sink registered (modifier state is dropped when a menu opens)");
+		void Register()
+		{
+			// Logged once so a support log shows whether IsGameAttackKey() can recognise the key:
+			// the game reports its attack binding in the same numbering as ButtonEvent, and this is
+			// the evidence if a tap ever fails to cancel the normal attack.
+			if (auto* map = RE::ControlMap::GetSingleton()) {
+				const auto mouse = map->GetMappedKey("Attack"sv, RE::INPUT_DEVICE::kMouse);
+				const auto keyboard = map->GetMappedKey("Attack"sv, RE::INPUT_DEVICE::kKeyboard);
+				const auto gamepad = map->GetMappedKey("Attack"sv, RE::INPUT_DEVICE::kGamepad);
+				PAI("input: game attack key: mouse={} '{}', keyboard={} '{}', gamepad={} '{}'",
+					mouse, Keys::Describe(static_cast<int>(mouse)),
+					keyboard, Keys::Describe(static_cast<int>(keyboard)),
+					gamepad, Keys::Describe(static_cast<int>(gamepad)));
 			} else {
-				PAW("input: no menu event source, a held modifier survives menus");
+				PAW("input: no control map, a bound attack key will not cancel the normal attack");
 			}
-		} else {
-			PAW("input: no UI singleton, a held modifier survives menus");
+
+			if (auto* manager = RE::BSInputDeviceManager::GetSingleton()) {
+				manager->AddEventSink(Sink::GetSingleton());
+				const auto& settings = Config::Cached();
+				PAI("input: input sink registered (auto '{}', right '{}', left '{}', dual '{}')",
+					Keys::DescribeChord(settings.binds[0]), Keys::DescribeChord(settings.binds[1]),
+					Keys::DescribeChord(settings.binds[2]), Keys::DescribeChord(settings.binds[3]));
+			} else {
+				PAE("input: BSInputDeviceManager singleton is null, the tap will not work");
+			}
+
+			if (auto* ui = RE::UI::GetSingleton()) {
+				if (auto* source = ui->GetEventSource<RE::MenuOpenCloseEvent>()) {
+					source->AddEventSink(MenuSink::GetSingleton());
+					PAI("input: menu sink registered (modifier state is dropped when a menu opens)");
+				} else {
+					PAW("input: no menu event source, a held modifier survives menus");
+				}
+			} else {
+				PAW("input: no UI singleton, a held modifier survives menus");
+			}
 		}
 	}
-}
 }

@@ -62,11 +62,13 @@ namespace SPA::Attack
 			const char*    name;
 		};
 
-		Pick Resolve(RE::Actor* a_actor, Selection::Choice a_fallback)
+		// The box decides the action (Selection::ForSlot, unit tested); the hands only matter to
+		// the auto box.
+		Pick Resolve(RE::Actor* a_actor, Binds::Slot a_slot)
 		{
 			const bool right = HasWeapon(a_actor, false);
 			const bool left = HasWeapon(a_actor, true);
-			const auto choice = Selection::Choose(right, left, a_fallback);
+			const auto choice = Selection::ForSlot(a_slot, right, left);
 			return { For(choice), Selection::Describe(choice, right || left) };
 		}
 
@@ -184,7 +186,7 @@ namespace SPA::Attack
 		PAI("attack: {} | {} | {}", report(Selection::Choice::kRight), report(Selection::Choice::kLeft), report(Selection::Choice::kDual));
 	}
 
-	void PowerAttack(const char* a_reason, Selection::Choice a_fallback)
+	void PowerAttack(const char* a_reason, Binds::Slot a_slot)
 	{
 		auto* player = RE::PlayerCharacter::GetSingleton();
 		if (!player) {
@@ -192,7 +194,7 @@ namespace SPA::Attack
 			return;
 		}
 
-		const auto pick = Resolve(player, a_fallback);
+		const auto pick = Resolve(player, a_slot);
 		if (!pick.actions.power) {
 			PAE("attack: no {} action resolved, ignoring the tap", pick.name);
 			return;
@@ -211,6 +213,24 @@ namespace SPA::Attack
 		}
 
 		PerformAction(pick.actions.power, player, pick.name);
+	}
+
+	void NormalAttack(const char* a_reason, Binds::Slot a_slot)
+	{
+		auto* player = RE::PlayerCharacter::GetSingleton();
+		if (!player) {
+			PAE("attack: no player, ignoring the normal attack");
+			return;
+		}
+
+		const auto pick = Resolve(player, a_slot);
+		if (!pick.actions.attack) {
+			PAE("attack: no {} normal action resolved, ignoring it", pick.name);
+			return;
+		}
+
+		PA("attack: {} -> {}", a_reason, pick.name);
+		PerformAction(pick.actions.attack, player, a_reason);
 	}
 
 	void Reset()

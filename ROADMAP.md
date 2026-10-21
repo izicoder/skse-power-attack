@@ -27,6 +27,14 @@ Three comments since release, none of them a bug report:
 - **Automatic hand selection.** Both hands with weapons -> dual power attack; one weapon -> that hand; empty
   hands -> the tapped key's own hand. No config key, no menu toggle (`src/Selection.h`, unit tested).
 - **Optional second key** (`leftHotkey`), unbound by default: same selection, left-hand fallback.
+- **Four power attack boxes** (`src/Binds.h`, `src/Selection.h`): auto, right, left, dual. The box decides the
+  action; only auto looks at the hands. Every box can be cleared; the old `leftHotkey` became the left box.
+- **Chords** (`src/Chord.h`): a bind is a key plus Shift/Ctrl/Alt, either side. A chord that names a modifier
+  beats a bare chord on the same key, and an exact duplicate goes to the box higher in the menu, so rebinding
+  never needs a fight. Config format 2, one migration from `hotkey`/`leftHotkey`/`modifierKey`.
+- **The game's attack key is cancelled** (`src/Input.cpp`): a press the game would attack with is reported as
+  handled (`kStop`) while a box owns it, so a tap gives only the power attack. A hold of that key is handed back
+  as the normal attack. Untested in play - see "Next".
 
 ## Next
 
@@ -34,18 +42,25 @@ Nothing here is promised; each item is only worth doing if the idea survives bei
 
 1. **Bug reports first.** Nobody has posted a crash, a log or a "does nothing" yet. If one arrives, it outranks
    everything below. Collect version, SKSE log, game version.
+2. **Verify the cancel in play.** Bind Left Mouse, tap it: exactly one power attack and no normal swing first.
+   Hold it: one normal swing when you let go. `input: game attack key: mouse=256 ...` in the log says whether the
+   control map reports the same numbering as the input events; if a tap still double-fires, the sink's `kStop` is
+   not honoured and the only other route is a hook on the attack handler, which breaks the "no hooks" promise,
+   so ask first.
 2. **Wider runtime check.** `0.2.1` was built and played on 1.6.1170. Confirming it loads on the other common
    AE runtimes and on SE 1.5.97 costs a DLL load and one tap each, and it is the cheapest way to stop the
    "requires Address Library" footnote turning into a support thread.
 3. **Dual-wield check in play.** `ActionDualPowerAttack` is vanilla, but it has not been played yet: verify it
    fires with sword+sword, dagger+sword and with MCO/ADXP installed.
-4. **Menu polish.** The menu already captures a key press instead of asking for a code; what is left is showing
-   the picked hand in the tab, if the player wants to see it.
+4. **Menu polish.** The menu already captures chords instead of asking for a code; what is left is showing the
+   hand the auto box would pick right now, if the player wants to see it.
 
 ## Deliberately not planned
 
 - **A "which hand" setting.** Tried and rejected: it is configuration the player should not have to think about,
-  and the hands already say what they want.
+  and the hands already say what they want. Right, left and dual are keys, not an action setting.
+- Consuming keys the game does not attack with: there is nothing to cancel, and swallowing the press of a binding
+  this build cannot see can only cost the game something.
 - Attack-window notify or queue, long-press modes, block unbinding, a MCM, a calendar of extras. "Simple" is what
   makes it compatible with everything.
 - VR.

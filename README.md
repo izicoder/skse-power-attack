@@ -1,60 +1,84 @@
 # SKSE Power Attack
 
-Tap mouse button 5 (or any key you bind) and you power attack — press and release inside the tap window;
-holding the key does nothing. **One DLL, nothing else** — no `.esp`, no `.esl`, no Papyrus, no MCM quest: a pure
-SKSE plugin that submits the vanilla power attack action for whatever your hands call for.
+Tap mouse button 5 (or any key or chord you bind) and you power attack. **One DLL, nothing else** — no `.esp`,
+no `.esl`, no Papyrus, no MCM quest: a pure SKSE plugin that submits the vanilla power attack action for
+whatever your hands call for.
 
 > **AI-generated.** Every line of this plugin was written by an AI. No human authored or thoroughly reviewed
 > it, so treat it as a hobby project: expect rough edges, and check it yourself before trusting it in your
 > load order.
 
-## What it does
+## The rules, in order
 
-- **Tap, not hold.** The power attack fires when the key is *released*, and only if the press was shorter than the
-  tap window (200 ms by default). A hold does nothing, so the key is safe to bind next to sprint or jump.
-- **The hand is picked for you.** A weapon in both hands gets the vanilla two-weapon power attack; a weapon in one
-  hand attacks with that hand. Nothing to configure, and it keeps up when you change loadout mid-fight.
-- **One tap = one power attack.** Every tap submits the matching vanilla action, so combos, stamina costs, perks
-  and animations all behave exactly like a real power attack.
-- **Optional second key.** Unbound by default. It uses the same automatic hand selection; the only difference is
-  with empty hands, where it swings left instead of right. Bind it if you want a dedicated left tap.
-- **Jump / block fallback.** While jumping or blocking the power attack action is eaten by the engine, so in
-  those two cases the plugin performs the normal attack of the same hand first and the power attack 200 ms later.
-- **Left alone:** bows, crossbows, staves, horses, killmoves, sitting/sleeping, paused game, dialogue.
-- **Empty stamina** is allowed by default (for mods that let you power attack at 0 stamina); one checkbox
-  turns that off.
-- **Optional modifier:** bind e.g. Shift so only Shift+tap power attacks.
+Everything below is decided in this order, top to bottom.
+
+1. **A key press only counts if a box is bound to it.** Four boxes: auto, right, left, dual. A bind is a
+   *chord*: one key plus the modifiers held with it (Shift, Ctrl, Alt — either side).
+2. **Which box a press belongs to.** A chord that names modifiers beats a bare chord on the same key, so
+   `Shift + Mouse 5` fires its box even when plain `Mouse 5` is bound above it. Two boxes with the exact same
+   chord are allowed: the one higher in the menu wins. Extra modifiers you did not name are ignored, so
+   sprinting with Alt held never blocks a plain `Mouse 5`.
+3. **Which action the box fires.**
+   - **Auto** reads your hands: a weapon in both hands → two-weapon power attack, a weapon in one hand → that
+     hand's power attack, nothing equipped → right-hand power attack.
+   - **Right / left / dual** do exactly what they say, whatever you hold. If a hand cannot do it (a left power
+     attack with an empty left hand), the engine plays what it can.
+4. **Tap, not hold.** The attack fires when the key is *released*, and only if the press was shorter than the
+   tap window (200 ms by default). Holding a key you bound does nothing, which is why it is safe next to sprint
+   or jump.
+5. **The game's own attack key is taken over.** If a chord uses the key the game attacks with (left mouse by
+   default), the plugin keeps that press away from the game, so a tap gives *only* the power attack instead of
+   a normal swing plus a power attack. Let the same key go after the tap window and the press is handed back as
+   the normal attack — holding the button still swings.
+6. **Any other key is left alone.** A key the game does not attack with (mouse 4/5, an unused letter) keeps
+   whatever it did before; there is nothing to cancel.
+7. **Jumping or blocking.** The engine eats the power attack action in those two states, so the plugin performs
+   the normal attack of the same hand first and the power attack 200 ms later.
+8. **Never a power attack:** bows, crossbows and staves equipped; on a horse; in a killmove; sitting or
+   sleeping; paused game; dialogue. The press is not taken in those cases either, so the bow still fires.
+9. **Empty stamina** is allowed by default (for mods that let you power attack at 0 stamina); one checkbox turns
+   that off.
+10. **No box bound = nothing happens.** Every box can be cleared, including auto.
+
+## Features
+
+- Chords: hold Shift, Ctrl or Alt while pressing a key to bind `Shift + Mouse 5`, `Ctrl + E`, whatever.
+- Four power attack boxes: auto (hands), right, left, dual. Bind one, or all four.
+- Every tap submits the matching vanilla action, so combos, stamina costs, perks and animations all behave
+  exactly like a real power attack.
 - **Settings tab** in [SKSE Menu Framework](https://www.nexusmods.com/skyrimspecialedition/mods/120352) with
-  key rebinds, the stamina toggle and a logging switch. Every change saves itself.
+  the four rebinds, the tap window, the stamina toggle and a logging switch. Every change saves itself.
 - Works without SKSE Menu Framework — the JSON keeps working on its own.
 
 ## Settings
 
-`SKSE/Plugins/SKSEPowerAttack.json`, next to the DLL (inside the mod folder under MO2), written with
-defaults on first run:
+`SKSE/Plugins/SKSEPowerAttack.json`, next to the DLL (inside the mod folder under MO2), written with defaults
+on first run:
+
+```json
+{
+	"binds": {
+		"auto":  { "key": 260, "mods": 0 },
+		"right": { "key": -1,  "mods": 0 },
+		"left":  { "key": -1,  "mods": 0 },
+		"dual":  { "key": -1,  "mods": 0 }
+	},
+	"tapWindowMs": 200,
+	"allowZeroStamina": true,
+	"logging": true,
+	"version": 2
+}
+```
 
 | Key | Default | Meaning |
 |---|---|---|
-| `hotkey` | `260` | key that triggers the power attack (mouse button 5) |
-| `leftHotkey` | `-1` | optional second key, same auto selection with a left-hand fallback; `-1` = unbound |
-| `modifierKey` | `-1` | optional modifier; `-1` = none |
+| `binds.auto.key` | `260` | key for the auto box (mouse button 5); `-1` = unbound |
+| `binds.auto.mods` | `0` | modifiers for it: `1` shift, `2` ctrl, `4` alt, add them together |
+| `binds.right` / `left` / `dual` | `-1` | the three fixed boxes, same shape; all unbound by default |
 | `tapWindowMs` | `200` | press *and* release inside this many ms, otherwise nothing happens (20–1000) |
 | `allowZeroStamina` | `true` | allow the tap with an empty stamina bar |
 | `logging` | `true` | write `SKSEPowerAttack.log` |
-| `version` | `1` | format of the file; written by the plugin, do not edit |
-
-The file carries a `version` and is migrated in place on launch: a key that changes name, type or meaning
-gets exactly one migration step, so a file from an older release is converted and rewritten once instead of
-being reset. Options this build does not recognise are preserved rather than dropped (a file from a newer
-build survives a downgrade), a bad value costs only that key, and no config is shipped in the archive, so an
-update never overwrites a tuned file.
-
-Upgrading from this plugin's pre-rename build? Its `OneClickPowerAttack.json` sits next to the DLL and is
-imported once on first run, then left untouched.
-
-A key can only have one job. Binding a key that another bind already holds takes it over and leaves the other
-row unbound; the main power attack key is the exception, since a tap with no key is useless, so the menu refuses
-to give its key away instead.
+| `version` | `2` | format of the file; written by the plugin, do not edit |
 
 Key codes use SKSE's `InputMap` numbering:
 
@@ -62,8 +86,21 @@ Key codes use SKSE's `InputMap` numbering:
 - `256`–`263` — mouse button (`256` left, `257` right, `258` middle, …)
 - `266`–`281` — gamepad (dpad, start/back, sticks, shoulders, A/B/X/Y, LT/RT)
 
-The default used to be the right mouse button (`257`); the file defaults to mouse 5 now. An existing
-`SKSEPowerAttack.json` keeps whatever it already contains, so change `hotkey` by hand or in the menu.
+A modifier key cannot be a chord's key (it is what you hold), so `42` in a `key` field is repaired.
+
+The file carries a `version` and is migrated in place on launch: a key that changes name, type or meaning gets
+exactly one migration step, so a file from an older release is converted and rewritten once instead of being
+reset. Format 1 (`hotkey`, `leftHotkey`, `modifierKey`) becomes format 2 (`binds`) on the first launch: the old
+`hotkey` and its modifier become the auto chord, the old `leftHotkey` becomes the left box. The left box is a
+plain left power attack now — the old second key used to give the dual attack while dual-wielding. Options this
+build does not recognise are preserved rather than dropped (a file from a newer build survives a downgrade), a
+bad value costs only that box, and no config is shipped in the archive, so an update never overwrites a tuned
+file.
+
+A key can sit in two boxes; the one higher in the list wins. Nothing is stolen when you rebind.
+
+Upgrading from this plugin's pre-rename build? Its `OneClickPowerAttack.json` sits next to the DLL and is
+imported once on first run, then left untouched.
 
 ## Compatibility
 
@@ -72,8 +109,10 @@ The default used to be the right mouse button (`257`); the file defaults to mous
 - **No hooks.** The plugin never patches game code, never rewrites a vtable and never edits a record: it reads
   input events, looks up two vanilla actions and calls the engine's own `ProcessAction` through the task
   interface.
-- **Input is never consumed.** Every event the plugin sees is passed on unchanged, so the game and every other
-  mod see exactly what they would without it.
+- **Input is passed on, except the attack key you bind.** The sink reports "handled" only for the press and
+  release of a key the game itself attacks with, and only while a box is bound to it — that is the cancel in
+  rule 5 above. Every other event reaches the game unchanged, so the game and every other mod see exactly what
+  they would without it.
 - **No threads.** The 200 ms jump/block fallback is a chain of main-thread tasks, not a worker thread.
 - **Menu optional.** With SKSE Menu Framework installed there is a settings tab; without it the menu is skipped
   and the JSON still applies.
@@ -95,8 +134,8 @@ the same MSVC runtime as SKSE64 itself (VCRUNTIME140 / MSVCP140), so nothing els
 ## Install
 
 Put `SKSEPowerAttack.dll` in `…/mods/<your mod>/SKSE/Plugins/` and enable the mod. **Disable any other
-one-click power attack plugin** (e.g. One Click Power Attack NG) when enabling this one — both listen to the
-same click and would submit the power attack twice.
+one-click power attack plugin** when enabling this one — both listen to the same click and would submit the
+power attack twice.
 
 ## Building
 
@@ -120,6 +159,12 @@ deliberate step, and it refuses to run while Skyrim is open:
 `CMakeUserPresets.json` (git-ignored) points `COMMONLIB_PREBUILT_DIR` at the prebuilt CommonLibSSE bundle
 already extracted by the `skyrim-blink` project, so nothing is rebuilt from source. Drop it to let CMake
 download the bundle instead.
+
+The pure logic (chords, box resolution, the auto table) is unit tested without the game:
+
+```powershell
+ctest --test-dir build/vs2022 --output-on-failure
+```
 
 ## Packaging a test install
 
@@ -156,7 +201,8 @@ first archive for a new mod is uploaded on the mod page by hand.
 ## Logging
 
 `…\Documents\My Games\Skyrim Special Edition\SKSE\SKSEPowerAttack.log`, trace level, flushed every line.
-Untick **Write SKSEPowerAttack.log** to silence it.
+Untick **Write SKSEPowerAttack.log** to silence it. A tap logs which box fired, the chord, how long the key was
+held and the action it submitted; a cancelled press says so on the same line.
 
 ## Credits
 

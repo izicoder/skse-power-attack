@@ -28,7 +28,10 @@ namespace SPA
 
 		// Schema version of SKSEPowerAttack.json. Bump this whenever a key changes name, type
 		// or meaning, and add exactly one migration step for the jump (see Migrate).
-		constexpr int kSettingsFormatVersion = 1;
+		//
+		// 2 = the four power attack keys are chords under "binds" (key + modifier mask). Format 1
+		// had "hotkey", "leftHotkey" and one global "modifierKey".
+		constexpr int kSettingsFormatVersion = 2;
 
 		// Format version of the file that was read. Saving stamps the higher of this and
 		// kSettingsFormatVersion: a file from a newer build must never be rewritten as an older
@@ -39,7 +42,7 @@ namespace SPA
 		// written by a newer build survives a downgrade.
 		bool IsKnownKey(std::string_view a_key)
 		{
-			static constexpr std::string_view kKeys[] = { "version", "hotkey", "leftHotkey", "modifierKey", "tapWindowMs", "allowZeroStamina", "logging" };
+			static constexpr std::string_view kKeys[] = { "version", "binds", "tapWindowMs", "allowZeroStamina", "logging" };
 			return std::find(std::begin(kKeys), std::end(kKeys), a_key) != std::end(kKeys);
 		}
 
@@ -73,13 +76,44 @@ namespace SPA
 			return value.get<bool>();
 		}
 
+		// One chord out of the document. A wrong shape costs only that box: its default stays.
+		std::optional<Chord::Bind> ReadBind(const nlohmann::json& a_json, const char* a_key)
+		{
+			if (!a_json.contains(a_key)) {
+				return std::nullopt;
+			}
+			const auto& value = a_json.at(a_key);
+			if (!value.is_object()) {
+				PAW("config: binds.{} is {}, expected an object, keeping the default", a_key, value.type_name());
+				return std::nullopt;
+			}
+
+			Chord::Bind bind;
+			if (const auto key = ReadInt(value, "key")) {
+				bind.key = *key;
+			}
+			if (const auto mods = ReadInt(value, "mods")) {
+				bind.mods = static_cast<unsigned>(*mods) & Chord::kAllMods;
+			}
+			return bind;
+		}
+
+		nlohmann::json BindToJson(const Chord::Bind& a_bind)
+		{
+			return nlohmann::json{ { "key", a_bind.key }, { "mods", a_bind.mods } };
+		}
+
 		nlohmann::json ToJson(const Settings& a_settings)
 		{
 			auto json = s_unknown;  // keep what this build does not understand...
 			json.update(nlohmann::json{
-				{ "hotkey", a_settings.hotkey },
-				{ "leftHotkey", a_settings.leftHotkey },
-				{ "modifierKey", a_settings.modifierKey },
+				{ "binds",
+					nlohmann::json{
+						{ "auto", BindToJson(a_settings.binds[Binds::Index(Binds::Slot::kAuto)]) },
+						{ "right", BindToJson(a_settings.binds[Binds::Index(Binds::Slot::kRight)]) },
+						{ "left", BindToJson(a_settings.binds[Binds::Index(Binds::Slot::kLeft)]) },
+						{ "dual", BindToJson(a_settings.binds[Binds::Index(Binds::Slot::kDual)]) },
+					} },
 				{ "tapWindowMs", a_settings.tapWindowMs },
 				{ "allowZeroStamina", a_settings.allowZeroStamina },
 				{ "logging", a_settings.logging },
@@ -88,15 +122,51 @@ namespace SPA
 			return json;
 		}
 
+		// Format 1 -> 2: three loose key codes become chords under "binds". The old modifier key
+		// was a global "hold this too", which is exactly a chord modifier, so it moves onto the
+		// auto key as a modifier bit - unless it is not actually Shift/Ctrl/Alt, because a chord
+		// has nowhere to put anything else.
+		void MigrateFrom1(nlohmann::json& a_json)
+		{
+			if (a_json.contains("binds")) {
+				return;  // already in the new shape
+			}
+
+			const auto key = ReadInt(a_json, "hotkey").value_or(Settings{}.binds[0].key);
+			const auto second = ReadInt(a_json, "leftHotkey").value_or(kNoKey);
+			const auto modifier = ReadInt(a_json, "modifierKey").value_or(kNoKey);
+
+			unsigned mods = Chord::kNone;
+			if (modifier != kNoKey && modifier != key) {
+				mods = Chord::ModBitFor(modifier);
+				if (mods == Chord::kNone) {
+					PAW("config: the old modifier {} is not Shift, Ctrl or Alt, dropping it (rebind it with the key in the menu)", modifier);
+				}
+			}
+
+			a_json["binds"] = nlohmann::json{
+				{ "auto", BindToJson(Chord::Bind{ key, mods }) },
+				{ "right", BindToJson(Chord::Bind{}) },
+				{ "left", BindToJson(Chord::Bind{ second, Chord::kNone }) },
+				{ "dual", BindToJson(Chord::Bind{}) },
+			};
+			a_json.erase("hotkey");
+			a_json.erase("leftHotkey");
+			a_json.erase("modifierKey");
+			PAI("config: migrated the format 1 hotkeys to {}", a_json.at("binds").dump());
+		}
+
 		// Walks a document from the version it was written with up to kSettingsFormatVersion.
-		// Version 1 is the first format, so there is nothing to convert yet: every later format
-		// adds one step here, and the save that follows rewrites the file in the current shape.
-		// A file from a newer build never reaches this (ApplyDocument checks the version first).
+		// Each jump adds exactly one step here, and the save that follows rewrites the file in
+		// the current shape. A file from a newer build never reaches this (ApplyDocument checks
+		// the version first).
 		void Migrate(nlohmann::json& a_json, int a_fromVersion)
 		{
-			(void)a_json;  // nothing to convert yet; the parameter is what each new step needs
+			if (a_fromVersion < 2) {
+				MigrateFrom1(a_json);
+			}
 			if (a_fromVersion < kSettingsFormatVersion) {
-				PAW("config: no migration from format {} to {}, leaving the file as it is", a_fromVersion, kSettingsFormatVersion);
+				PAI("config: migrated from format {} to {}", a_fromVersion, kSettingsFormatVersion);
 			}
 		}
 
@@ -141,14 +211,24 @@ namespace SPA
 				}
 			}
 
-			if (const auto value = ReadInt(a_json, "hotkey")) {
-				s.hotkey = *value;
-			}
-			if (const auto value = ReadInt(a_json, "leftHotkey")) {
-				s.leftHotkey = *value;
-			}
-			if (const auto value = ReadInt(a_json, "modifierKey")) {
-				s.modifierKey = *value;
+			if (a_json.contains("binds")) {
+				const auto& binds = a_json.at("binds");
+				if (!binds.is_object()) {
+					PAW("config: 'binds' is {}, expected an object, keeping the default keys", binds.type_name());
+				} else {
+					if (const auto bind = ReadBind(binds, "auto")) {
+						s.binds[Binds::Index(Binds::Slot::kAuto)] = *bind;
+					}
+					if (const auto bind = ReadBind(binds, "right")) {
+						s.binds[Binds::Index(Binds::Slot::kRight)] = *bind;
+					}
+					if (const auto bind = ReadBind(binds, "left")) {
+						s.binds[Binds::Index(Binds::Slot::kLeft)] = *bind;
+					}
+					if (const auto bind = ReadBind(binds, "dual")) {
+						s.binds[Binds::Index(Binds::Slot::kDual)] = *bind;
+					}
+				}
 			}
 			if (const auto value = ReadInt(a_json, "tapWindowMs")) {
 				s.tapWindowMs = *value;
@@ -247,8 +327,12 @@ namespace SPA
 	{
 		std::scoped_lock lock{ s_lock };
 		const auto& s = Get();
-		return std::format("hotkey={} leftHotkey={} modifier={} tap={}ms allowZeroStamina={} logging={}",
-			s.hotkey, s.leftHotkey, s.modifierKey, s.tapWindowMs, s.allowZeroStamina, s.logging);
+		const auto  bind = [](const Chord::Bind& a_bind) {
+			return a_bind.IsBound() ? std::format("{} mods={}", a_bind.key, a_bind.mods) : std::string{ "off" };
+		};
+		return std::format("binds: auto={} right={} left={} dual={} tap={}ms allowZeroStamina={} logging={}",
+			bind(s.binds[0]), bind(s.binds[1]), bind(s.binds[2]), bind(s.binds[3]),
+			s.tapWindowMs, s.allowZeroStamina, s.logging);
 	}
 
 	std::filesystem::path Config::Path()
@@ -263,35 +347,44 @@ namespace SPA
 		auto& s = Get();
 		bool changed = false;
 
-		// 0 is a legal scancode, so "no key" is -1 and every code above the gamepad block is junk.
-		if (s.hotkey < 0 || s.hotkey > kMaxKeyCode) {
-			PAW("config: hotkey {} is not bindable, restoring the default 260 (mouse button 5)", s.hotkey);
-			s.hotkey = Settings{}.hotkey;
+		// One box at a time: a junk key costs only that box. The auto box is the one bound out of
+		// the box, so it gets its default back; the other three just come back unbound. Two boxes
+		// sharing a chord is legal now (the one higher in the menu wins), so duplicates are left
+		// alone - only values that can never fire are repaired.
+		const auto fixKey = [&changed](Chord::Bind& a_bind, Binds::Slot a_slot, int a_default) {
+			const auto key = a_bind.key;
+			if (key == kNoKey) {
+				return;  // unbound is a legal state for every box
+			}
+
+			const char* fix = a_default == kNoKey ? "leaving it unbound" : "restoring the default";
+			if (key < kNoKey || key > kMaxKeyCode) {
+				PAW("config: {} key {} is not bindable, {}", Binds::Name(a_slot), key, fix);
+			} else if (Chord::IsModifier(key)) {
+				// A modifier is what you hold down for a chord; it cannot be the chord's key.
+				PAW("config: {} is bound to a modifier key, {}", Binds::Name(a_slot), fix);
+			} else {
+				return;
+			}
+
+			a_bind.key = a_default;
 			changed = true;
-		}
-		// The second key is off by default, so an unbindable value just turns it back off
-		// instead of costing the user a configured main key.
-		if (s.leftHotkey != kNoKey && (s.leftHotkey < 0 || s.leftHotkey > kMaxKeyCode)) {
-			PAW("config: leftHotkey {} is not bindable, leaving the second key unbound", s.leftHotkey);
-			s.leftHotkey = kNoKey;
-			changed = true;
-		}
-		if (s.modifierKey != kNoKey && (s.modifierKey < 0 || s.modifierKey > kMaxKeyCode)) {
-			PAW("config: modifierKey {} is not bindable, disabling the modifier", s.modifierKey);
-			s.modifierKey = kNoKey;
-			changed = true;
-		}
-		if (s.modifierKey == s.hotkey) {
-			PAW("config: modifierKey equals hotkey ({}), disabling the modifier", s.modifierKey);
-			s.modifierKey = kNoKey;
-			changed = true;
-		}
-		// Two binds on one key would make the wrong one fire, and the menu refuses the same
-		// combination, so a hand-edited file gets the optional key turned off rather than both.
-		if (s.leftHotkey != kNoKey && (s.leftHotkey == s.hotkey || s.leftHotkey == s.modifierKey)) {
-			PAW("config: leftHotkey {} is already bound to something else, leaving the second key unbound", s.leftHotkey);
-			s.leftHotkey = kNoKey;
-			changed = true;
+		};
+		fixKey(s.binds[Binds::Index(Binds::Slot::kAuto)], Binds::Slot::kAuto, Settings{}.binds[0].key);
+		fixKey(s.binds[Binds::Index(Binds::Slot::kRight)], Binds::Slot::kRight, kNoKey);
+		fixKey(s.binds[Binds::Index(Binds::Slot::kLeft)], Binds::Slot::kLeft, kNoKey);
+		fixKey(s.binds[Binds::Index(Binds::Slot::kDual)], Binds::Slot::kDual, kNoKey);
+
+		// Only Shift, Ctrl and Alt exist; a hand-edited file may carry anything in the mask.
+		for (std::size_t i = 0; i < Binds::kSlotCount; ++i) {
+			auto&      bind = s.binds[i];
+			const auto mods = bind.mods & Chord::kAllMods;
+			if (mods != bind.mods) {
+				PAW("config: {} has unknown modifier bits 0x{:X}, dropping them",
+					Binds::Name(static_cast<Binds::Slot>(i)), bind.mods & ~Chord::kAllMods);
+				bind.mods = mods;
+				changed = true;
+			}
 		}
 		// A tap window outside the range is clamped rather than reset: keeping the user close to
 		// what they asked for beats throwing the value away.
