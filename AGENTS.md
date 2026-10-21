@@ -24,6 +24,7 @@ anything that has to wait, see `Attack::ScheduleDelayedPowerAttack`), and no con
 | `src/UI.h/.cpp` | SKSE Menu Framework tab: rebinds, toggles, two-click reset. |
 | `src/Log.h` | `PA`/`PAI`/`PAW`/`PAE`, trace level, flushed per line. |
 | `extern/SKSEMenuFramework.h` | Vendored framework header (do not edit). |
+| `ROADMAP.md` | Current state, the Nexus comment requests and their verdicts, next steps, deliberate non-goals. |
 | `tools/Deploy.ps1` | Manual deploy of the built DLL into one mod folder (refuses while Skyrim runs). |
 | `tools/Build-Release.ps1` | Version-stamped build + `packages/SKSEPowerAttack-<version>.zip` for test installs. |
 | `tools/Publish-Release.ps1` | Uploads that zip to Nexus (v3 API) and/or a GitHub release — only when named on the command line. |
