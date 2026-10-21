@@ -20,9 +20,9 @@ namespace SPA::Attack
 		// themselves submit, so this goes through the same animation/state machinery as a real
 		// button press instead of forcing an animation event by hand.
 		//
-		// Vanilla keeps one action per hand and a third for the two-weapon spin, which is what
-		// lets the plugin pick by equipment at all. Which one a tap uses is decided in
-		// Selection.h (unit tested); this file only turns that choice into a submission.
+		// Vanilla has a full set for each attack: a normal and a power attack for the right hand,
+		// the left hand and the two-weapon spin. The row names which set to use; nothing here
+		// looks at what the player is holding.
 		struct Actions
 		{
 			RE::BGSAction* attack{ nullptr };  // normal attack, only the jump/block fallback uses it
@@ -46,15 +46,6 @@ namespace SPA::Attack
 			return s_actions[static_cast<std::size_t>(a_choice)];
 		}
 
-		bool HasWeapon(RE::Actor* a_actor, bool a_leftHand)
-		{
-			// A shield or a spell is not a weapon: only a weapon swings, so only a weapon decides
-			// the hand. Bows, crossbows and staves sit in the right hand with the left empty and
-			// so land on the right-hand action (the input gate rejects them before the tap).
-			auto* form = a_actor->GetEquippedObject(a_leftHand);
-			return form && form->IsWeapon();
-		}
-
 		// What the tap resolved to: the action pair plus the label for the log.
 		struct Pick
 		{
@@ -62,14 +53,11 @@ namespace SPA::Attack
 			const char*    name;
 		};
 
-		// The box decides the action (Selection::ForSlot, unit tested); the hands only matter to
-		// the auto box.
-		Pick Resolve(RE::Actor* a_actor, Binds::Slot a_slot)
+		// The row names the action and nothing else is consulted (Selection::ForSlot, unit tested).
+		Pick Resolve(Binds::Slot a_slot)
 		{
-			const bool right = HasWeapon(a_actor, false);
-			const bool left = HasWeapon(a_actor, true);
-			const auto choice = Selection::ForSlot(a_slot, right, left);
-			return { For(choice), Selection::Describe(choice, right || left) };
+			const auto choice = Selection::ForSlot(a_slot);
+			return { For(choice), Selection::Describe(choice) };
 		}
 
 		void PerformAction(RE::BGSAction* a_action, RE::Actor* a_actor, const char* a_reason)
@@ -194,7 +182,7 @@ namespace SPA::Attack
 			return;
 		}
 
-		const auto pick = Resolve(player, a_slot);
+		const auto pick = Resolve(a_slot);
 		if (!pick.actions.power) {
 			PAE("attack: no {} action resolved, ignoring the tap", pick.name);
 			return;
@@ -223,7 +211,7 @@ namespace SPA::Attack
 			return;
 		}
 
-		const auto pick = Resolve(player, a_slot);
+		const auto pick = Resolve(a_slot);
 		if (!pick.actions.attack) {
 			PAE("attack: no {} normal action resolved, ignoring it", pick.name);
 			return;

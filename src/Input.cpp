@@ -129,6 +129,21 @@ namespace SPA
 				return a_actor->AsActorState()->actorState1.sitSleepState == RE::SIT_SLEEP_STATE::kRidingMount;
 			}
 
+			// A press that misses is silent unless the key is bound somewhere: then only the
+			// modifiers failed to line up, which is worth a line when someone is chasing a chord.
+			void LogNearMiss(const Settings& a_settings, int a_code, unsigned a_held)
+			{
+				for (std::size_t i = 0; i < Binds::kSlotCount; ++i) {
+					const auto& bind = a_settings.binds[i];
+					if (!bind.IsBound() || bind.key != a_code) {
+						continue;
+					}
+					PAI("input: '{}' down with modifiers 0x{:X}, but the {} row wants '{}' - no row matched",
+						Keys::Describe(a_code), a_held, Binds::Name(static_cast<Binds::Slot>(i)), Keys::DescribeChord(bind));
+					return;
+				}
+			}
+
 			// Anything that makes a power attack meaningless or unsafe to submit. The reason is
 			// only logged when a tap actually arrives, so a menu or a horse cannot flood the log.
 			const char* GateReason(const Settings& a_settings)
@@ -190,6 +205,26 @@ namespace SPA
 					bool        taken = false;
 					const auto& settings = Config::Cached();
 					try {
+						// Modifiers first, over the whole batch: Ctrl or Alt pressed in the same poll
+						// as the chord key can be dispatched after it, and then the chord would miss.
+						// They are never a chord's own key, so their game action is never touched.
+						for (auto* event = *a_events; event; event = event->next) {
+							auto* button = event->AsButtonEvent();
+							if (!button) {
+								continue;
+							}
+							const auto code = static_cast<int>(Keys::Encode(button->device.get(), button->GetIDCode()));
+							if (const auto modBit = Chord::ModBitFor(code); modBit != Chord::kNone) {
+								if (button->Value() > 0.0f) {
+									s_heldMods.fetch_or(modBit, std::memory_order_acq_rel);
+								} else {
+									s_heldMods.fetch_and(~modBit, std::memory_order_acq_rel);
+								}
+								PAI("input: modifier '{}' {}, held now 0x{:X}", Keys::Describe(code),
+									button->Value() > 0.0f ? "down" : "up", s_heldMods.load(std::memory_order_acquire));
+							}
+						}
+
 						for (auto* event = *a_events; event; event = event->next) {
 							auto* button = event->AsButtonEvent();
 							if (!button) {
@@ -200,19 +235,8 @@ namespace SPA
 							if (code == static_cast<int>(Keys::kUnknown)) {
 								continue;
 							}
-
-							// Modifiers are tracked before anything else: they make a chord more
-							// specific and are never a chord's own key, so their game action (sprint,
-							// crouch, walk) is never touched.
-							if (const auto modBit = Chord::ModBitFor(code); modBit != Chord::kNone) {
-								if (button->Value() > 0.0f) {
-									s_heldMods.fetch_or(modBit, std::memory_order_acq_rel);
-									PAI("input: modifier '{}' down (0x{:X})", Keys::Describe(code), s_heldMods.load(std::memory_order_acquire));
-								} else {
-									s_heldMods.fetch_and(~modBit, std::memory_order_acq_rel);
-									PAI("input: modifier '{}' up (0x{:X})", Keys::Describe(code), s_heldMods.load(std::memory_order_acquire));
-								}
-								continue;
+							if (Chord::IsModifier(code)) {
+								continue;  // already applied above
 							}
 
 							// ButtonEvent semantics: the first press has heldDownSecs == 0, every
@@ -223,8 +247,10 @@ namespace SPA
 									continue;  // a repeat while held, not a new press
 								}
 
-								const auto slot = Binds::Resolve(settings.binds, code, s_heldMods.load(std::memory_order_acquire));
+								const auto held = s_heldMods.load(std::memory_order_acquire);
+								const auto slot = Binds::Resolve(settings.binds, code, held);
 								if (!slot) {
+									LogNearMiss(settings, code, held);
 									continue;
 								}
 
@@ -240,13 +266,13 @@ namespace SPA
 								tap.pressTicks.store(Now(), std::memory_order_release);
 								taken |= take;
 
-								PAI("input: '{}' down ({} box){}: release within {} ms to power attack",
-									Keys::DescribeChord(bind), Binds::Name(*slot),
+								PAI("input: '{}' down ({} row, modifiers 0x{:X}){}: release within {} ms to power attack",
+									Keys::DescribeChord(bind), Binds::Name(*slot), held,
 									take ? ", the game does not get this press" : "", settings.tapWindowMs);
 								continue;
 							}
 
-							// Release: the box still waiting for this exact key, if any.
+							// Release: the row still waiting for this exact key, if any.
 							std::optional<Binds::Slot> slot{};
 							for (std::size_t i = 0; i < Binds::kSlotCount; ++i) {
 								if (s_taps[i].code.load(std::memory_order_acquire) == code &&
@@ -304,7 +330,7 @@ namespace SPA
 							}
 
 							const auto click = s_clicks.fetch_add(1, std::memory_order_relaxed) + 1;
-							PAI("input: tap #{} on '{}' ({} box, held {} ms) -> power attack",
+							PAI("input: tap #{} on '{}' ({} row, held {} ms) -> power attack",
 								click, Keys::DescribeChord(bind), Binds::Name(*slot), heldMs);
 							Attack::PowerAttack("tap", *slot);
 						}
@@ -315,8 +341,9 @@ namespace SPA
 					}
 
 					// kStop is how the tap cancels the normal attack: the game must not also see the
-					// press of the key it attacks with. Whether the game honours it for its own
-					// input handling is the open question - see the log line above.
+					// press of the key it attacks with. Whether it honours that inside its own input
+					// handling is unverified - look for ", the game does not get this press" on the
+					// down line when a tap still double-swings.
 					return taken ? RE::BSEventNotifyControl::kStop : RE::BSEventNotifyControl::kContinue;
 				}
 			};
@@ -382,9 +409,9 @@ namespace SPA
 			if (auto* manager = RE::BSInputDeviceManager::GetSingleton()) {
 				manager->AddEventSink(Sink::GetSingleton());
 				const auto& settings = Config::Cached();
-				PAI("input: input sink registered (auto '{}', right '{}', left '{}', dual '{}')",
+				PAI("input: input sink registered (right '{}', left '{}', dual '{}')",
 					Keys::DescribeChord(settings.binds[0]), Keys::DescribeChord(settings.binds[1]),
-					Keys::DescribeChord(settings.binds[2]), Keys::DescribeChord(settings.binds[3]));
+					Keys::DescribeChord(settings.binds[2]));
 			} else {
 				PAE("input: BSInputDeviceManager singleton is null, the tap will not work");
 			}

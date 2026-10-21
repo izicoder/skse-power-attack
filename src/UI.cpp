@@ -80,9 +80,10 @@ namespace SPA::UI
 			}
 		}
 
-		// One chord row: current chord, Rebind, Clear. Every box can be cleared, including auto:
-		// the menu is the only way to unbind what the plugin does, so it has to be able to.
-		void RenderBind(const char* a_label, Chord::Bind& a_bind, Binds::Slot a_slot)
+		// One chord row: current chord, Rebind, Clear, and a plain sentence about what it swings.
+		// Every row can be cleared: the menu is the only way to unbind what the plugin does, so it
+		// has to be able to.
+		void RenderBind(const char* a_label, Chord::Bind& a_bind, Binds::Slot a_slot, const char* a_explain)
 		{
 			const int  index = static_cast<int>(Binds::Index(a_slot));
 			const bool capturing = s_captureSlot.load(std::memory_order_acquire) == index;
@@ -122,6 +123,10 @@ namespace SPA::UI
 					SaveNow(std::format("{} key cleared", Binds::Name(a_slot)).c_str());
 				}
 			}
+
+			ImGui::Indent();
+			Body(a_explain);
+			ImGui::Unindent();
 		}
 
 		// Reset wipes every setting, so it takes two clicks inside the window above; the second
@@ -174,20 +179,21 @@ namespace SPA::UI
 			auto& settings = Config::Get();
 
 			ImGui::SeparatorText("Power attack keys");
-			RenderBind("Auto (follows your hands)", settings.binds[Binds::Index(Binds::Slot::kAuto)], Binds::Slot::kAuto);
-			RenderBind("Right power attack", settings.binds[Binds::Index(Binds::Slot::kRight)], Binds::Slot::kRight);
-			RenderBind("Left power attack", settings.binds[Binds::Index(Binds::Slot::kLeft)], Binds::Slot::kLeft);
-			RenderBind("Dual power attack", settings.binds[Binds::Index(Binds::Slot::kDual)], Binds::Slot::kDual);
+			RenderBind("Right hand", settings.binds[Binds::Index(Binds::Slot::kRight)], Binds::Slot::kRight,
+				"Swings the vanilla right-hand power attack.");
+			RenderBind("Left hand", settings.binds[Binds::Index(Binds::Slot::kLeft)], Binds::Slot::kLeft,
+				"Swings the vanilla left-hand power attack.");
+			RenderBind("Dual wield", settings.binds[Binds::Index(Binds::Slot::kDual)], Binds::Slot::kDual,
+				"Swings the vanilla two-weapon power attack. It needs a one-handed weapon in each hand to land.");
 
-			// The action is not a setting for the three fixed boxes: they are whatever they say.
-			// Only auto looks at the hands, so there is nothing to get wrong when the loadout changes.
 			ImGui::Spacing();
-			Body("Hold Shift, Ctrl or Alt and press a key to bind a chord. Two boxes may share a chord: the one higher in this list wins. Binding the game's own attack key takes that press away from the game, so a tap gives only the power attack.");
+			Body("Tap a key: press it, let go within the tap window below, and the power attack fires. Hold it longer and nothing happens.");
+			Body("Hold Shift, Ctrl or Alt first, then press the key, and both are stored in that row (e.g. Shift + Mouse 5).");
+			Body("Two rows on the same key: the row higher in this list wins.");
+			Body("Bound the game's own attack button (left mouse by default)? The plugin takes that press: a tap is only the power attack, and a long press still gives the normal swing.");
 			ImGui::Spacing();
-			Body("Auto picks from your hands: a weapon in both -> dual, one weapon -> that hand, nothing equipped -> right.");
-			Body("Tap = release inside the tap window -> power attack. Hold it longer and nothing happens, except on the game's own attack key, where the hold becomes a normal swing.");
-			Body("Jumping or blocking swallows the power attack action, so there the plugin swings normally first and power attacks 200 ms later.");
-			Body("Bows, crossbows, staves, horses, killmoves, sitting, dialogue and a paused game are left to the game: no power attack, and the press is not taken.");
+			Body("Jumping or blocking: the game throws a power attack away there, so the plugin swings normally first and power attacks 200 ms later.");
+			Body("Never a power attack, and the press stays with the game: bow, crossbow or staff in hand, on a horse, in a killmove, sitting, dialogue, paused.");
 
 			ImGui::Spacing();
 			ImGui::SetNextItemWidth(ImGui::GetFontSize() * 10.0f);

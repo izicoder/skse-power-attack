@@ -14,6 +14,10 @@ namespace SPA
 	constexpr int kNoKey = Chord::kNoKey;
 	constexpr int kMaxKeyCode = 281;
 
+	// The key the right row gets out of the box (mouse button 5), and the value Validate() puts
+	// back when that row's key is junk.
+	constexpr int kDefaultKey = 260;
+
 	// Tap window bounds in milliseconds, shared by the setting, its validation and the menu
 	// slider: below 20 ms a human cannot tap it anyway, and above a second it is a hold.
 	constexpr int kMinTapWindowMs = 20;
@@ -21,14 +25,13 @@ namespace SPA
 
 	struct Settings
 	{
-		// The four power attack keys in menu order (Binds::Slot). Auto is the one bound out of
-		// the box: mouse button 5, no modifier. A key is a chord, so the modifier travels with
-		// it instead of being one global setting.
+		// The three power attack keys in menu order (Binds::Slot). The right hand is the one bound
+		// out of the box: mouse button 5, no modifier. A key is a chord, so the modifier travels
+		// with it instead of being one global setting.
 		Binds::BindList binds{
-			Chord::Bind{ 260, Chord::kNone },  // auto
-			Chord::Bind{},                     // right
-			Chord::Bind{},                     // left
-			Chord::Bind{},                     // dual
+			Chord::Bind{ kDefaultKey, Chord::kNone },  // right
+			Chord::Bind{},                             // left
+			Chord::Bind{},                             // dual
 		};
 		int  tapWindowMs{ 200 };       // press AND release inside this window, otherwise nothing happens
 		bool allowZeroStamina{ true };  // power attack with an empty stamina bar (0 stamina mods)

@@ -12,7 +12,7 @@ long-press modes, block unbinding) unless asked; "simple" is the point.
 Keep the surface small, because that is what "compatible with everything" means here: no hooks, no vtable or
 record edits, no threads (use the task interface and a re-posting task for anything that has to wait, see
 `Attack::ScheduleDelayedPowerAttack`), and no config file shipped. The one exception to "input is never
-consumed": a press of a key the game itself attacks with is reported as handled (`kStop`) while a box owns it,
+consumed": a press of a key the game itself attacks with is reported as handled (`kStop`) while a row owns it,
 because that is the only way a tap can cancel the normal swing. Nothing else is ever consumed.
 
 ## Layout
@@ -22,12 +22,12 @@ because that is the only way a tap can cancel the normal swing. Nothing else is 
 | `src/Plugin.cpp` | `SKSEPlugin_Load` + messaging: config load, action init, input/UI registration. |
 | `src/Config.h/.cpp` | `Settings` (`binds` + 3 fields), JSON load/save next to the DLL, format version + migrations, validation, revision counter. |
 | `src/Chord.h` | What a bind is, engine-free: a key plus a Shift/Ctrl/Alt mask, the scan codes of the modifiers, matching and the label prefix. Unit tested. |
-| `src/Binds.h` | The four boxes in menu order (`kAuto`, `kRight`, `kLeft`, `kDual`), engine-free, and `Resolve()`: which box a press belongs to. Unit tested. |
-| `src/Selection.h` | The tap decision, engine-free: `Choose()` is the auto box (hands -> action), `ForSlot()` adds the three fixed boxes. Unit tested. |
+| `src/Binds.h` | The three rows in menu order (`kRight`, `kLeft`, `kDual`), engine-free, and `Resolve()`: which row a press belongs to. Unit tested. |
+| `src/Selection.h` | The tap decision, engine-free: `ForSlot()` maps a row to its vanilla action and nothing else. Unit tested. |
 | `src/Attack.h/.cpp` | Resolves all six vanilla attack/power-attack actions, submits them through the task interface, jump/block fallback as a task chain (no threads). `PowerAttack` and the `NormalAttack` hand-back. |
-| `src/Input.h/.cpp` | Key encoding (SKSE InputMap numbering), labels including `Keys::DescribeChord`, the tap sink (modifier mask, four tap slots, press + release inside the window), its gates, the cancel, the menu-open sink. |
+| `src/Input.h/.cpp` | Key encoding (SKSE InputMap numbering), labels including `Keys::DescribeChord`, the tap sink (modifiers over the whole batch first, then three tap slots, press + release inside the window), its gates, the cancel, the menu-open sink. |
 | `tests/` | `ChordTests.cpp`, `BindsTests.cpp`, `SelectionTests.cpp`: plain `main()`, no framework, no engine. |
-| `src/UI.h/.cpp` | SKSE Menu Framework tab: four chord rows with chord capture, toggles, two-click reset. |
+| `src/UI.h/.cpp` | SKSE Menu Framework tab: three chord rows with chord capture, toggles, two-click reset. |
 | `src/Log.h` | `PA`/`PAI`/`PAW`/`PAE`, trace level, flushed per line. |
 | `extern/SKSEMenuFramework.h` | Vendored framework header (do not edit). |
 | `ROADMAP.md` | Current state, the Nexus comment requests and their verdicts, next steps, deliberate non-goals. |
@@ -97,16 +97,23 @@ normal swing) and hold it (one normal swing on release).
 - **Tap, not hold.** The attack fires on release, and only if the press was shorter than `tapWindowMs`
   (default 200 ms, range 20-1000). The chord is resolved at press, the gates at release. This mirrors
   BlinkDash's tap semantics deliberately.
-- **Four boxes, order is priority.** `src/Binds.h` lists them in menu order: auto, right, left, dual. The box
-  decides the action (`Selection::ForSlot`); only auto reads the hands (`Selection::Choose`). A press goes to the
-  most specific chord (one that names modifiers beats a bare chord on the same key), and an exact duplicate goes
-  to the box higher in the menu. So duplicates are legal and rebinding never fights the user. The vanilla form
-  ids are `0x13004` left attack, `0x13005` right attack, `0x50C96` dual attack, `0x2E2F6` left power,
-  `0x13383` right power, `0x2E2F7` dual power. An earlier draft shipped a `powerAttack: right|left|dual` key;
-  the owner rejected it as clunky configuration. Right/left/dual are keys instead, which is why it stays gone.
+- **Three rows, order is priority.** `src/Binds.h` lists them in menu order: right, left, dual. The row decides
+  the action (`Selection::ForSlot`), which is a plain switch: there is no weapon detection, so the hands play no
+  part in the decision. A press goes to the most specific chord (one that names modifiers beats a bare chord on
+  the same key), and an exact duplicate goes to the row higher in the menu, so duplicates are legal and
+  rebinding never fights the user. The vanilla form ids are `0x13004` left attack, `0x13005` right attack,
+  `0x50C96` dual attack, `0x2E2F6` left power, `0x13383` right power, `0x2E2F7` dual power - the game has a full
+  set for all three, which is what makes three rows possible. An earlier draft shipped a `powerAttack:
+  right|left|dual` setting, and a later one detected the hand from equipped weapons; both were rejected in
+  favour of rows ("fists counted as weapons", so detection lied about empty hands). Do not bring either back.
 - **A bind is a chord** (`src/Chord.h`): key + `Chord::Mods` mask (shift 1, ctrl 2, alt 4), both left and right
   modifier scan codes map to the same bit. A modifier can never be a chord's key, and extra held modifiers are
   tolerated so sprinting does not block a bare chord.
+- **Modifiers come from events, batch by batch, modifiers first.** The sink applies every modifier event in the
+  batch before it looks at any key in the same batch, because Ctrl or Alt pressed in the same poll as the chord
+  key can be dispatched after it (Shift usually arrives first, which is why only Ctrl and Alt looked unreliable).
+  Do not switch to `BSInputDevice::IsPressed` for this: `GetKeyboard()` drags `BSWin32KeyboardDevice` into the
+  link and the prebuilt CommonLibSSE bundle leaves those vtables unresolved (`LNK2001`).
 - **The game's attack key is cancelled, nothing else is.** `Input::IsGameAttackKey` asks the control map
   (`"Attack"` event id) whether the game attacks with that key; only then does the sink answer `kStop` for the
   press and its release. If that press turns out to be a hold or hits a gate, `Attack::NormalAttack` hands the
@@ -114,8 +121,8 @@ normal swing) and hold it (one normal swing on release).
 - The tests in `tests/` cover exactly those three pure headers (`Chord`, `Binds`, `Selection`) and are the
   reason they are engine-free: `cmake --build build/vs2022 --target spa_ChordTests spa_BindsTests
   spa_SelectionTests`, or `ctest --test-dir build/vs2022 --output-on-failure`.
-- Default is auto on mouse button 5 (`260`), no modifier; the other three boxes are unbound. Every box can be
-  cleared, including auto - the menu is the only way to unbind, so it has to be able to.
+- Default is right on mouse button 5 (`260`), no modifier; left and dual are unbound. Every row can be cleared -
+  the menu is the only way to unbind, so it has to be able to.
 - The jump/block fallback is 200 ms of re-posting tasks, never a thread.
 - No attribution to any other power-attack mod anywhere (README, page, comments); it was removed on request,
   do not re-add it.
@@ -131,14 +138,16 @@ normal swing) and hold it (one normal swing on release).
   scratch files belong outside the repo (`.playwright-mcp/` is ignored for that reason).
 - A config file written by the pre-rename build (`OneClickPowerAttack.json`) is imported once and left in
   place; `config: importing the settings left by the earlier build` in the log is correct, not a bug.
-- Reading a test run: `tap #N on '<chord>' (<box> box, held N ms) -> power attack`,
+- Reading a test run: `tap #N on '<chord>' (<box> row, held N ms) -> power attack`,
   `'<chord>' held N ms > 200 ms window, no power attack (hold)`, `tap ignored (<reason>)`,
+  `'<chord>' down with modifiers 0x0, but the left row wants 'Shift + Mouse 5' - no row matched`,
   `input: menu '<name>' opened, dropping the modifier state`. A press taken from the game adds
   `, the game does not get this press` on the down line, and a tap that does not fire hands the swing back with
   `attack: the tap key was held, normal attack`.
-- Config format is 2. A format 1 file (or a `OneClickPowerAttack.json` with the old three keys) is migrated in
-  place: `hotkey` + `modifierKey` -> `binds.auto`, `leftHotkey` -> `binds.left`, `right`/`dual` unbound. The left
-  box is a plain left power attack now - the old second key used to give the dual attack while dual-wielding.
+- Config format is 3. A format 1 file (`hotkey`/`leftHotkey`/`modifierKey`) or a format 2 one (`binds` with
+  `auto`) is migrated in place: format 1 becomes the format 2 shape first, then `binds.auto` moves to
+  `binds.right` when that row is free (dropped, with a warning, when it is not). The left row is a plain left
+  power attack now - the old format 1 second key used to give the dual attack while dual-wielding.
 - `kStop` from the input sink is the only cancel and it is unverified: whether the game honours it for its own
   attack handling depends on where its sink sits in the list. If a tap on a bound attack key still double-fires,
   the down line will say the press was taken and the attack happened anyway, and a hook on the attack handler is

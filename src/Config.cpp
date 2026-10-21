@@ -29,9 +29,10 @@ namespace SPA
 		// Schema version of SKSEPowerAttack.json. Bump this whenever a key changes name, type
 		// or meaning, and add exactly one migration step for the jump (see Migrate).
 		//
-		// 2 = the four power attack keys are chords under "binds" (key + modifier mask). Format 1
-		// had "hotkey", "leftHotkey" and one global "modifierKey".
-		constexpr int kSettingsFormatVersion = 2;
+		// 2 = the power attack keys became chords under "binds" (key + modifier mask), with an
+		//     "auto" box that followed the hands. 3 = auto is gone: right, left and dual only.
+		// Format 1 had "hotkey", "leftHotkey" and one global "modifierKey".
+		constexpr int kSettingsFormatVersion = 3;
 
 		// Format version of the file that was read. Saving stamps the higher of this and
 		// kSettingsFormatVersion: a file from a newer build must never be rewritten as an older
@@ -109,7 +110,6 @@ namespace SPA
 			json.update(nlohmann::json{
 				{ "binds",
 					nlohmann::json{
-						{ "auto", BindToJson(a_settings.binds[Binds::Index(Binds::Slot::kAuto)]) },
 						{ "right", BindToJson(a_settings.binds[Binds::Index(Binds::Slot::kRight)]) },
 						{ "left", BindToJson(a_settings.binds[Binds::Index(Binds::Slot::kLeft)]) },
 						{ "dual", BindToJson(a_settings.binds[Binds::Index(Binds::Slot::kDual)]) },
@@ -156,6 +156,34 @@ namespace SPA
 			PAI("config: migrated the format 1 hotkeys to {}", a_json.at("binds").dump());
 		}
 
+		// Format 2 -> 3: the auto box is gone. Its chord moves to the right row when that row is
+		// free; if right already has a key of its own, the auto chord is dropped and the log says
+		// which one, because a key that silently stops working is worse than a warning.
+		void MigrateFrom2(nlohmann::json& a_json)
+		{
+			if (!a_json.contains("binds") || !a_json.at("binds").is_object()) {
+				return;
+			}
+
+			auto& binds = a_json["binds"];
+			if (!binds.contains("auto")) {
+				return;
+			}
+
+			const auto autoBind = ReadBind(binds, "auto");
+			const auto right = ReadBind(binds, "right");
+			const bool rightFree = !right || !right->IsBound();
+
+			if (autoBind && autoBind->IsBound() && rightFree) {
+				binds["right"] = BindToJson(*autoBind);
+				PAI("config: moved the auto key {} to the right row", binds["right"].dump());
+			} else if (autoBind && autoBind->IsBound()) {
+				PAW("config: the auto key {} is dropped, the right row already has {}",
+					BindToJson(*autoBind).dump(), binds["right"].dump());
+			}
+			binds.erase("auto");
+		}
+
 		// Walks a document from the version it was written with up to kSettingsFormatVersion.
 		// Each jump adds exactly one step here, and the save that follows rewrites the file in
 		// the current shape. A file from a newer build never reaches this (ApplyDocument checks
@@ -164,6 +192,9 @@ namespace SPA
 		{
 			if (a_fromVersion < 2) {
 				MigrateFrom1(a_json);
+			}
+			if (a_fromVersion < 3) {
+				MigrateFrom2(a_json);
 			}
 			if (a_fromVersion < kSettingsFormatVersion) {
 				PAI("config: migrated from format {} to {}", a_fromVersion, kSettingsFormatVersion);
@@ -216,9 +247,6 @@ namespace SPA
 				if (!binds.is_object()) {
 					PAW("config: 'binds' is {}, expected an object, keeping the default keys", binds.type_name());
 				} else {
-					if (const auto bind = ReadBind(binds, "auto")) {
-						s.binds[Binds::Index(Binds::Slot::kAuto)] = *bind;
-					}
 					if (const auto bind = ReadBind(binds, "right")) {
 						s.binds[Binds::Index(Binds::Slot::kRight)] = *bind;
 					}
@@ -330,8 +358,8 @@ namespace SPA
 		const auto  bind = [](const Chord::Bind& a_bind) {
 			return a_bind.IsBound() ? std::format("{} mods={}", a_bind.key, a_bind.mods) : std::string{ "off" };
 		};
-		return std::format("binds: auto={} right={} left={} dual={} tap={}ms allowZeroStamina={} logging={}",
-			bind(s.binds[0]), bind(s.binds[1]), bind(s.binds[2]), bind(s.binds[3]),
+		return std::format("binds: right={} left={} dual={} tap={}ms allowZeroStamina={} logging={}",
+			bind(s.binds[0]), bind(s.binds[1]), bind(s.binds[2]),
 			s.tapWindowMs, s.allowZeroStamina, s.logging);
 	}
 
@@ -347,14 +375,14 @@ namespace SPA
 		auto& s = Get();
 		bool changed = false;
 
-		// One box at a time: a junk key costs only that box. The auto box is the one bound out of
-		// the box, so it gets its default back; the other three just come back unbound. Two boxes
-		// sharing a chord is legal now (the one higher in the menu wins), so duplicates are left
+		// One row at a time: a junk key costs only that row. The right row is the one bound out of
+		// the box, so it gets its default back; left and dual just come back unbound. Two rows
+		// sharing a chord is legal (the one higher in the menu wins), so duplicates are left
 		// alone - only values that can never fire are repaired.
 		const auto fixKey = [&changed](Chord::Bind& a_bind, Binds::Slot a_slot, int a_default) {
 			const auto key = a_bind.key;
 			if (key == kNoKey) {
-				return;  // unbound is a legal state for every box
+				return;  // unbound is a legal state for every row
 			}
 
 			const char* fix = a_default == kNoKey ? "leaving it unbound" : "restoring the default";
@@ -370,8 +398,7 @@ namespace SPA
 			a_bind.key = a_default;
 			changed = true;
 		};
-		fixKey(s.binds[Binds::Index(Binds::Slot::kAuto)], Binds::Slot::kAuto, Settings{}.binds[0].key);
-		fixKey(s.binds[Binds::Index(Binds::Slot::kRight)], Binds::Slot::kRight, kNoKey);
+		fixKey(s.binds[Binds::Index(Binds::Slot::kRight)], Binds::Slot::kRight, kDefaultKey);
 		fixKey(s.binds[Binds::Index(Binds::Slot::kLeft)], Binds::Slot::kLeft, kNoKey);
 		fixKey(s.binds[Binds::Index(Binds::Slot::kDual)], Binds::Slot::kDual, kNoKey);
 
